@@ -5,34 +5,97 @@ import {
 } from 'lucide-react';
 import Avatar from './Avatar';
 
+/* ==================== RINGTONE HOOK ==================== */
+function useRingtone(active) {
+  useEffect(() => {
+    if (!active) return;
+
+    let audio = null;
+    let intervalId = null;
+    let synthCtx = null;
+
+    const start = async () => {
+      // Try mp3 file first
+      try {
+        audio = new Audio('/voice-call-rington.mp3');
+        audio.loop = true;
+        audio.volume = 1;
+        await audio.play();
+        console.log('[ringtone] playing mp3');
+        return;
+      } catch (e) {
+        console.warn('[ringtone] mp3 failed, using synth', e.message);
+      }
+
+      // Fallback: synthesized ringtone
+      try {
+        synthCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const beep = () => {
+          if (!synthCtx || synthCtx.state === 'closed') return;
+          const now = synthCtx.currentTime;
+          [0, 0.4].forEach((offset, i) => {
+            const osc = synthCtx.createOscillator();
+            const gain = synthCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.value = i === 0 ? 850 : 1050;
+            gain.gain.setValueAtTime(0, now + offset);
+            gain.gain.linearRampToValueAtTime(0.3, now + offset + 0.02);
+            gain.gain.linearRampToValueAtTime(0, now + offset + 0.3);
+            osc.connect(gain);
+            gain.connect(synthCtx.destination);
+            osc.start(now + offset);
+            osc.stop(now + offset + 0.35);
+          });
+        };
+        beep();
+        intervalId = setInterval(beep, 2000);
+      } catch {}
+    };
+
+    start();
+
+    return () => {
+      if (audio) {
+        audio.pause();
+        audio.currentTime = 0;
+        audio.src = '';
+        audio = null;
+      }
+      if (intervalId) clearInterval(intervalId);
+      if (synthCtx) {
+        try { synthCtx.close(); } catch {}
+      }
+    };
+  }, [active]);
+}
+
 export default function CallModal({
   call, localStream, remoteStream,
   onEnd, onAccept, onReject, isIncoming,
 }) {
   const [micOn, setMicOn] = useState(true);
-  const [camOn, setCamOn] = useState(call?.type === 'video');
-  const [speakerOn, setSpeakerOn] = useState(true);
+  const [camOn, setCamOn] = useState(true);          // camera on by default
+  const [speakerOn, setSpeakerOn] = useState(false); // 🔥 DEFAULT OFF
   const [minimized, setMinimized] = useState(false);
   const [remoteReady, setRemoteReady] = useState(false);
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const remoteAudioRef = useRef(null);
-  const localStreamRef = useRef(null);
-  const remoteStreamRef = useRef(null);
 
-  /* ================== LOCAL STREAM ================== */
+  /* ========== RINGTONE — incoming call ========== */
+  useRingtone(isIncoming);
+
+  /* ========== ATTACH LOCAL STREAM ========== */
   useEffect(() => {
     const el = localVideoRef.current;
     if (!el || !localStream) return;
-    if (localStreamRef.current === localStream) return;
-
-    localStreamRef.current = localStream;
+    if (el.srcObject === localStream) return;
     el.srcObject = localStream;
-    el.play().catch((e) => console.warn('local play err', e));
-  }, [localStream]);
+    el.play().catch((e) => console.warn('local play:', e));
+  }, [localStream, camOn, minimized]);
 
-  /* ================== REMOTE STREAM ================== */
+  /* ========== ATTACH REMOTE STREAM ========== */
   useEffect(() => {
     if (!remoteStream) {
       setRemoteReady(false);
@@ -48,10 +111,13 @@ export default function CallModal({
         try {
           await v.play();
           setRemoteReady(true);
+          console.log('[remote video] playing ✓');
         } catch (e) {
-          console.warn('remote video play err:', e);
-          // retry on user gesture
-          setTimeout(() => v.play().catch(() => {}), 200);
+          console.warn('[remote video] play fail:', e);
+          // retry after user gesture
+          setTimeout(() => {
+            v.play().then(() => setRemoteReady(true)).catch(() => {});
+          }, 300);
         }
       }
 
@@ -60,21 +126,20 @@ export default function CallModal({
         try {
           await a.play();
         } catch (e) {
-          console.warn('remote audio play err:', e);
-          setTimeout(() => a.play().catch(() => {}), 200);
+          console.warn('[remote audio] play fail:', e);
+          setTimeout(() => a.play().catch(() => {}), 300);
         }
       }
     };
 
     attach();
-    remoteStreamRef.current = remoteStream;
 
     const onAddTrack = () => attach();
     remoteStream.addEventListener('addtrack', onAddTrack);
     return () => remoteStream.removeEventListener('addtrack', onAddTrack);
-  }, [remoteStream]);
+  }, [remoteStream, minimized]);
 
-  /* ================== TOGGLES ================== */
+  /* ========== TOGGLES ========== */
   const toggleMic = () => {
     setMicOn((v) => {
       localStream?.getAudioTracks().forEach((t) => (t.enabled = !v));
@@ -90,12 +155,21 @@ export default function CallModal({
   };
 
   const toggleSpeaker = () => {
-    setSpeakerOn((v) => {
-      if (remoteAudioRef.current) remoteAudioRef.current.muted = v;
-      if (remoteVideoRef.current) remoteVideoRef.current.muted = v;
-      return !v;
+    setSpeakerOn((prev) => {
+      const next = !prev;
+      // Speaker ON = max volume; OFF = medium (earpiece-like)
+      const vol = next ? 1 : 0.5;
+      if (remoteAudioRef.current) remoteAudioRef.current.volume = vol;
+      if (remoteVideoRef.current) remoteVideoRef.current.volume = vol;
+      return next;
     });
   };
+
+  /* ========== SET INITIAL VOLUME (speaker OFF = 0.5) ========== */
+  useEffect(() => {
+    if (remoteAudioRef.current) remoteAudioRef.current.volume = 0.5;
+    if (remoteVideoRef.current) remoteVideoRef.current.volume = 0.5;
+  }, [remoteStream]);
 
   if (!call) return null;
 
@@ -103,7 +177,7 @@ export default function CallModal({
   const isRinging = call.state === 'calling';
   const isConnected = call.state === 'connected';
 
-  /* ========== INCOMING ========== */
+  /* ==================== INCOMING SCREEN ==================== */
   if (isIncoming) {
     return (
       <div className="fixed inset-0 z-[130] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-pop-in safe-top safe-bottom">
@@ -139,7 +213,7 @@ export default function CallModal({
     );
   }
 
-  /* ========== MINIMIZED ========== */
+  /* ==================== MINIMIZED ==================== */
   if (minimized) {
     return (
       <div className="fixed top-4 right-4 z-[130] glass-solid rounded-2xl shadow-2xl border border-white/10 p-3 flex items-center gap-3 animate-pop-in max-w-[calc(100vw-2rem)]">
@@ -166,13 +240,13 @@ export default function CallModal({
     );
   }
 
-  /* ========== FULL SCREEN ========== */
+  /* ==================== FULL SCREEN ==================== */
   return (
     <div className="fixed inset-0 z-[130] bg-gradient-to-br from-ink-900 via-ink-800 to-black flex flex-col animate-pop-in safe-top safe-bottom">
-      {/* hidden audio — for voice-only + video audio */}
+      {/* Hidden audio for voice-only calls */}
       <audio ref={remoteAudioRef} autoPlay playsInline />
 
-      {/* top bar */}
+      {/* TOP BAR */}
       <div className="flex items-center gap-3 p-3 sm:p-4 shrink-0">
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-base sm:text-lg truncate">
@@ -190,23 +264,21 @@ export default function CallModal({
         </button>
       </div>
 
-      {/* video area */}
+      {/* VIDEO AREA */}
       <div className="flex-1 relative mx-2 sm:mx-4 rounded-2xl sm:rounded-3xl overflow-hidden bg-black min-h-0">
-        {/* remote video */}
-        {isVideo && (
-          <video
-            ref={remoteVideoRef}
-            autoPlay
-            playsInline
-            muted={false}
-            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${
-              remoteReady ? 'opacity-100' : 'opacity-0'
-            }`}
-          />
-        )}
+        {/* Remote video — ALWAYS RENDERED, hidden if audio call */}
+        <video
+          ref={remoteVideoRef}
+          autoPlay
+          playsInline
+          className="absolute inset-0 w-full h-full object-cover"
+          style={{
+            display: isVideo && remoteReady ? 'block' : 'none',
+          }}
+        />
 
-        {/* placeholder while waiting */}
-        {(!remoteReady || !isVideo) && (
+        {/* Placeholder overlay */}
+        {(!isVideo || !remoteReady) && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-4">
             <div className="relative">
               <div className="absolute inset-0 rounded-full bg-brand-500/20 animate-ping" />
@@ -220,8 +292,8 @@ export default function CallModal({
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" /> Calling…
                 </>
-              ) : isVideo ? (
-                !remoteReady ? 'Connecting video…' : ''
+              ) : isVideo && !remoteReady ? (
+                'Connecting video…'
               ) : (
                 '🔊 On call'
               )}
@@ -229,9 +301,12 @@ export default function CallModal({
           </div>
         )}
 
-        {/* local PiP */}
-        {isVideo && localStream && camOn && (
-          <div className="absolute top-2 right-2 sm:top-4 sm:right-4 w-24 h-32 sm:w-32 sm:h-44 md:w-44 md:h-60 rounded-xl sm:rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl bg-black z-10">
+        {/* Local PiP — ALWAYS RENDERED */}
+        {isVideo && (
+          <div
+            className="absolute top-2 right-2 sm:top-4 sm:right-4 w-24 h-32 sm:w-32 sm:h-44 md:w-44 md:h-60 rounded-xl sm:rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl bg-black z-10"
+            style={{ display: camOn && localStream ? 'block' : 'none' }}
+          >
             <video
               ref={localVideoRef}
               autoPlay
@@ -243,7 +318,7 @@ export default function CallModal({
           </div>
         )}
 
-        {/* camera off */}
+        {/* Camera off indicator */}
         {isVideo && !camOn && (
           <div className="absolute top-2 right-2 sm:top-4 sm:right-4 w-24 h-32 sm:w-32 sm:h-44 md:w-44 md:h-60 rounded-xl sm:rounded-2xl bg-ink-900 border-2 border-white/10 flex flex-col items-center justify-center gap-2 z-10">
             <Camera className="w-6 h-6 text-slate-500" />
@@ -252,7 +327,7 @@ export default function CallModal({
         )}
       </div>
 
-      {/* controls */}
+      {/* CONTROLS */}
       <div className="flex items-center justify-center gap-2 sm:gap-4 p-3 sm:p-6 shrink-0">
         <button
           onClick={toggleMic}
@@ -297,9 +372,10 @@ export default function CallModal({
           onClick={toggleSpeaker}
           className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition active:scale-95 ${
             speakerOn
-              ? 'bg-white/10 hover:bg-white/20'
-              : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+              ? 'bg-brand-500/30 text-brand-400'
+              : 'bg-white/10 hover:bg-white/20'
           }`}
+          title={speakerOn ? 'Speaker ON' : 'Speaker OFF'}
         >
           {speakerOn ? (
             <Volume2 className="w-5 h-5 sm:w-6 sm:h-6" />

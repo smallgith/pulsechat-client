@@ -1,16 +1,25 @@
 const API_KEY = import.meta.env.VITE_GIPHY_API_KEY || '';
 const BASE = 'https://api.giphy.com/v1/gifs';
 
-export const isGiphyEnabled = () => !!API_KEY;
+console.log('[giphy] key present:', !!API_KEY, 'len:', API_KEY.length);
+
+export const isGiphyEnabled = () => !!API_KEY && API_KEY.length > 5;
 
 export const searchGifs = async (q = '', limit = 24) => {
-  if (!API_KEY) return [];
+  if (!isGiphyEnabled()) {
+    console.warn('[giphy] disabled — no API key');
+    return [];
+  }
   const endpoint = q.trim() ? 'search' : 'trending';
   const url = `${BASE}/${endpoint}?api_key=${API_KEY}&limit=${limit}&rating=pg-13${
     q.trim() ? `&q=${encodeURIComponent(q.trim())}` : ''
   }`;
+
   const res = await fetch(url);
-  if (!res.ok) return [];
+  if (!res.ok) {
+    console.error('[giphy] HTTP error', res.status);
+    throw new Error(`HTTP ${res.status}`);
+  }
   const json = await res.json();
   return (json.data || []).map((g) => ({
     id: g.id,

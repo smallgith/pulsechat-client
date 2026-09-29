@@ -133,13 +133,20 @@ export const showBrowserNotification = async ({
   tag,
   onClick,
   force = false,
-  chatUrl = '/',
 } = {}) => {
-  if (typeof Notification === 'undefined') return null;
-  if (Notification.permission !== 'granted') return null;
+  console.log('[notif] called', { title, body, force, permission: Notification?.permission });
 
-  // Don't skip if tab focused when force=true
+  if (typeof Notification === 'undefined') {
+    console.warn('[notif] Notification API not supported');
+    return null;
+  }
+  if (Notification.permission !== 'granted') {
+    console.warn('[notif] permission not granted:', Notification.permission);
+    return null;
+  }
+
   if (!force && document.visibilityState === 'visible' && document.hasFocus()) {
+    console.log('[notif] skipped — tab focused');
     return null;
   }
 
@@ -149,27 +156,28 @@ export const showBrowserNotification = async ({
     badge: '/favicon.ico',
     tag: tag || 'pulsechat',
     renotify: true,
-    silent: true, // we play sound ourselves
+    silent: true,
     vibrate: [200, 100, 200],
-    data: { url: chatUrl },
+    data: { url: '/' },
   };
 
   try {
-    // Prefer Service Worker (mobile + background support)
+    // Prefer SW
     if ('serviceWorker' in navigator) {
       try {
         const reg = await navigator.serviceWorker.ready;
-        if (reg && reg.showNotification) {
+        if (reg?.showNotification) {
           await reg.showNotification(title || 'PulseChat', opts);
+          console.log('[notif] shown via SW');
           return true;
         }
       } catch (e) {
-        console.warn('[notif] SW show failed, falling back', e);
+        console.warn('[notif] SW failed, fallback:', e);
       }
     }
 
-    // Fallback: direct Notification
     const n = new Notification(title || 'PulseChat', opts);
+    console.log('[notif] shown via direct API');
     n.onclick = () => {
       window.focus();
       n.close();
@@ -178,7 +186,7 @@ export const showBrowserNotification = async ({
     setTimeout(() => n.close(), 8000);
     return n;
   } catch (e) {
-    console.warn('[notif] show failed', e);
+    console.error('[notif] show failed:', e);
     return null;
   }
 };
