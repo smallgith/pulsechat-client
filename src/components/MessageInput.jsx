@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Paperclip, Smile, Send, X, Loader2, Mic, Trash2, StopCircle,
-  Image as ImageIcon, Film, FileText, Sparkles,
+  Paperclip, Smile, Send, X, Loader2, Mic, Trash2,
+  Image as ImageIcon, Film, FileText, Sparkles, Camera,
 } from 'lucide-react';
 import { uploadFile } from '../lib/socket';
 import { formatBytes } from '../lib/format';
@@ -13,31 +13,34 @@ export default function MessageInput({
   onSend, onTyping, disabled, replyTo, onCancelReply,
 }) {
   const [text, setText] = useState('');
-  const [files, setFiles] = useState([]);      // array of {file, preview, progress, url, meta}
+  const [files, setFiles] = useState([]);
   const [dragging, setDragging] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
   const [showGif, setShowGif] = useState(false);
 
   const taRef = useRef(null);
   const fileRef = useRef(null);
+  const imgRef = useRef(null);
   const typingTimer = useRef(null);
   const isTyping = useRef(false);
   const dragDepth = useRef(0);
 
   const recorder = useVoiceRecorder();
 
-  /* -------- auto-resize -------- */
+  /* auto-resize */
   useEffect(() => {
     const el = taRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
   }, [text]);
 
-  /* -------- typing emit -------- */
   const handleChange = (e) => {
     setText(e.target.value);
-    if (!isTyping.current) { isTyping.current = true; onTyping(true); }
+    if (!isTyping.current) {
+      isTyping.current = true;
+      onTyping(true);
+    }
     clearTimeout(typingTimer.current);
     typingTimer.current = setTimeout(() => {
       isTyping.current = false;
@@ -45,7 +48,6 @@ export default function MessageInput({
     }, 1400);
   };
 
-  /* -------- file add (single or multiple) -------- */
   const addFiles = (list) => {
     const arr = [...list];
     const accepted = arr
@@ -56,10 +58,10 @@ export default function MessageInput({
     }
     const items = accepted.map((f) => ({
       file: f,
-      preview: f.type.startsWith('image/') ? URL.createObjectURL(f) : null,
+      preview: f.type.startsWith('image/')
+        ? URL.createObjectURL(f)
+        : null,
       progress: 0,
-      url: null,
-      meta: null,
     }));
     setFiles((prev) => [...prev, ...items]);
   };
@@ -72,14 +74,13 @@ export default function MessageInput({
     });
   };
 
-  /* -------- drag & drop -------- */
+  /* drag */
   const onDragEnter = (e) => {
     e.preventDefault();
     e.stopPropagation();
     dragDepth.current++;
     if (e.dataTransfer?.types?.includes('Files')) setDragging(true);
   };
-
   const onDragLeave = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -89,13 +90,10 @@ export default function MessageInput({
       setDragging(false);
     }
   };
-
   const onDragOver = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    e.dataTransfer.dropEffect = 'copy';
   };
-
   const onDrop = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -104,7 +102,6 @@ export default function MessageInput({
     if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files);
   };
 
-  /* -------- paste images from clipboard -------- */
   const onPaste = (e) => {
     const items = e.clipboardData?.items;
     if (!items) return;
@@ -121,21 +118,23 @@ export default function MessageInput({
     }
   };
 
-  /* -------- send (with upload) -------- */
   const submit = async () => {
     if (disabled) return;
     if (!text.trim() && files.length === 0) return;
 
-    // upload all files in parallel
     let metas = [];
     if (files.length > 0) {
       try {
-        // Update individual progress per file
         const uploads = files.map((item, i) =>
           uploadFile(item.file, (p) => {
-            setFiles((prev) => prev.map((f, idx) => idx === i ? { ...f, progress: p } : f));
+            setFiles((prev) =>
+              prev.map((f, idx) => (idx === i ? { ...f, progress: p } : f))
+            );
           }).then((res) => ({
-            url: res.url, name: res.name, size: res.size, mime: res.mime,
+            url: res.url,
+            name: res.name,
+            size: res.size,
+            mime: res.mime,
           }))
         );
         metas = await Promise.all(uploads);
@@ -145,19 +144,21 @@ export default function MessageInput({
       }
     }
 
-    // Send message (with first file as primary, rest as extra array — server will store as array)
     onSend({
       text: text.trim(),
       file: metas[0] || null,
-      files: metas,   // server can iterate if needed
-      replyTo: replyTo ? {
-        id: replyTo.id,
-        fromName: replyTo.fromName,
-        preview: replyTo.text || (replyTo.file ? '📎 File' : replyTo.gif ? '🎬 GIF' : ''),
-      } : null,
+      files: metas,
+      replyTo: replyTo
+        ? {
+            id: replyTo.id,
+            fromName: replyTo.fromName,
+            preview:
+              replyTo.text ||
+              (replyTo.file ? '📎 File' : replyTo.gif ? '🎬 GIF' : ''),
+          }
+        : null,
     });
 
-    // cleanup
     files.forEach((f) => f.preview && URL.revokeObjectURL(f.preview));
     setText('');
     setFiles([]);
@@ -177,25 +178,28 @@ export default function MessageInput({
     }
   };
 
-  /* -------- emoji pick -------- */
   const addEmoji = (emoji) => {
     setText((t) => t + emoji);
     taRef.current?.focus();
   };
 
-  /* -------- gif pick -------- */
   const pickGif = (gif) => {
     onSend({
       text: '',
       file: null,
       gif: { url: gif.url, preview: gif.preview },
-      replyTo: replyTo ? { id: replyTo.id, fromName: replyTo.fromName, preview: replyTo.text || '' } : null,
+      replyTo: replyTo
+        ? {
+            id: replyTo.id,
+            fromName: replyTo.fromName,
+            preview: replyTo.text || '',
+          }
+        : null,
     });
     setShowGif(false);
     onCancelReply?.();
   };
 
-  /* -------- voice recording -------- */
   const startRecording = async () => {
     const ok = await recorder.start();
     if (!ok) alert('Microphone permission denied');
@@ -209,8 +213,18 @@ export default function MessageInput({
       onSend({
         text: '',
         file: null,
-        voice: { url: meta.url, duration: recorder.seconds || 1, size: meta.size },
-        replyTo: replyTo ? { id: replyTo.id, fromName: replyTo.fromName, preview: '🎤 Voice' } : null,
+        voice: {
+          url: meta.url,
+          duration: recorder.seconds || 1,
+          size: meta.size,
+        },
+        replyTo: replyTo
+          ? {
+              id: replyTo.id,
+              fromName: replyTo.fromName,
+              preview: '🎤 Voice',
+            }
+          : null,
       });
       URL.revokeObjectURL(res.url);
       onCancelReply?.();
@@ -221,7 +235,10 @@ export default function MessageInput({
 
   const uploading = files.some((f) => f.progress > 0 && f.progress < 100);
   const hasContent = text.trim() || files.length > 0;
-  const fmt = (s) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
+  const fmt = (s) =>
+    `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60)
+      .toString()
+      .padStart(2, '0')}`;
 
   return (
     <div
@@ -229,90 +246,93 @@ export default function MessageInput({
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
-      className="relative border-t border-white/5 bg-ink-800/80 backdrop-blur-xl"
+      className="relative border-t border-white/10 bg-ink-800/95 backdrop-blur-xl shrink-0 safe-bottom"
     >
-      {/* drag overlay */}
       {dragging && (
-        <div className="absolute inset-0 z-40 bg-brand-500/10 border-2 border-dashed border-brand-500/60 rounded-lg flex flex-col items-center justify-center pointer-events-none">
+        <div className="absolute inset-0 z-40 bg-brand-500/15 border-2 border-dashed border-brand-500/60 rounded-lg flex flex-col items-center justify-center pointer-events-none">
           <ImageIcon className="w-10 h-10 text-brand-400 mb-2" />
           <p className="text-sm font-semibold text-brand-400">Drop files here</p>
-          <p className="text-xs text-brand-400/70">Images, videos, documents</p>
         </div>
       )}
 
-      {/* reply banner */}
+      {/* reply */}
       {replyTo && (
-        <div className="px-3 pt-3">
-          <div className="flex items-center gap-3 p-2.5 rounded-xl bg-ink-900/70 border-l-4 border-brand-500 animate-pop-in">
+        <div className="px-2 sm:px-3 pt-2 sm:pt-3">
+          <div className="flex items-center gap-3 p-2.5 rounded-xl bg-ink-900/80 border-l-4 border-brand-500 animate-pop-in">
             <div className="min-w-0 flex-1">
               <p className="text-[11px] font-semibold text-brand-400 truncate">
                 Replying to {replyTo.fromName || 'message'}
               </p>
               <p className="text-xs text-slate-400 truncate">
-                {replyTo.text || (replyTo.file ? '📎 File' : replyTo.gif ? '🎬 GIF' : replyTo.voice ? '🎤 Voice' : '')}
+                {replyTo.text ||
+                  (replyTo.file
+                    ? '📎 File'
+                    : replyTo.gif
+                      ? '🎬 GIF'
+                      : replyTo.voice
+                        ? '🎤 Voice'
+                        : '')}
               </p>
             </div>
-            <button onClick={onCancelReply} className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition">
+            <button
+              onClick={onCancelReply}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition"
+            >
               <X className="w-4 h-4" />
             </button>
           </div>
         </div>
       )}
 
-      {/* emoji picker */}
       {showEmoji && (
-        <EmojiPicker onPick={addEmoji} onClose={() => setShowEmoji(false)} />
+        <EmojiPicker
+          onPick={addEmoji}
+          onClose={() => setShowEmoji(false)}
+        />
       )}
+      {showGif && <GifPicker onPick={pickGif} onClose={() => setShowGif(false)} />}
 
-      {/* gif picker */}
-      {showGif && (
-        <GifPicker onPick={pickGif} onClose={() => setShowGif(false)} />
-      )}
-
-      {/* files preview grid */}
+      {/* files grid */}
       {files.length > 0 && (
-        <div className="px-3 pt-3">
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 animate-pop-in">
+        <div className="px-2 sm:px-3 pt-2 sm:pt-3">
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 animate-pop-in">
             {files.map((item, i) => (
-              <div key={i} className="relative group rounded-xl overflow-hidden bg-ink-900/70 border border-white/10">
+              <div
+                key={i}
+                className="relative group rounded-xl overflow-hidden bg-ink-900/70 border border-white/10 aspect-square"
+              >
                 {item.preview ? (
-                  <img src={item.preview} alt="" className="w-full h-24 object-cover" />
+                  <img
+                    src={item.preview}
+                    alt=""
+                    className="w-full h-full object-cover"
+                  />
                 ) : (
-                  <div className="w-full h-24 flex items-center justify-center">
+                  <div className="w-full h-full flex items-center justify-center">
                     {item.file.type.startsWith('video/') ? (
-                      <Film className="w-8 h-8 text-slate-400" />
+                      <Film className="w-7 h-7 text-slate-400" />
                     ) : (
-                      <FileText className="w-8 h-8 text-slate-400" />
+                      <FileText className="w-7 h-7 text-slate-400" />
                     )}
                   </div>
                 )}
 
-                <div className="absolute inset-x-0 bottom-0 p-1.5 bg-gradient-to-t from-black/80 to-transparent">
-                  <p className="text-[10px] text-white truncate">{item.file.name}</p>
-                  <p className="text-[9px] text-white/70">{formatBytes(item.file.size)}</p>
+                <div className="absolute inset-x-0 bottom-0 p-1.5 bg-gradient-to-t from-black/85 to-transparent">
+                  <p className="text-[10px] text-white truncate">
+                    {item.file.name}
+                  </p>
                 </div>
 
                 {item.progress > 0 && item.progress < 100 && (
-                  <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                    <div className="w-12 h-12 relative">
-                      <svg className="w-12 h-12 -rotate-90">
-                        <circle cx="24" cy="24" r="20" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="3" />
-                        <circle
-                          cx="24" cy="24" r="20" fill="none" stroke="#10b981" strokeWidth="3"
-                          strokeDasharray={`${2 * Math.PI * 20}`}
-                          strokeDashoffset={`${2 * Math.PI * 20 * (1 - item.progress / 100)}`}
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                      <span className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold">{item.progress}%</span>
-                    </div>
+                  <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
+                    <Loader2 className="w-5 h-5 animate-spin text-brand-400" />
                   </div>
                 )}
 
                 {!uploading && (
                   <button
                     onClick={() => removeFile(i)}
-                    className="absolute top-1.5 right-1.5 p-1 rounded-lg bg-black/60 text-slate-300 hover:text-red-400 transition opacity-0 group-hover:opacity-100"
+                    className="absolute top-1 right-1 p-1 rounded-lg bg-black/70 text-slate-300 hover:text-red-400 transition"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -325,89 +345,122 @@ export default function MessageInput({
 
       {/* recording bar */}
       {recorder.recording ? (
-        <div className="px-3 py-3 flex items-center gap-3">
+        <div className="px-2 sm:px-3 py-2 sm:py-3 flex items-center gap-2 sm:gap-3">
           <button
             onClick={recorder.cancel}
-            className="p-2.5 rounded-xl text-red-400 hover:bg-red-500/10 transition"
-            title="Cancel"
+            className="p-2.5 rounded-full text-red-400 hover:bg-red-500/10 active:bg-red-500/20 transition"
           >
             <Trash2 className="w-5 h-5" />
           </button>
-          <div className="flex-1 flex items-center gap-3 px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20">
+
+          <div className="flex-1 flex items-center gap-3 px-4 py-2.5 rounded-full bg-red-500/10 border border-red-500/20">
             <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
-            <span className="text-sm font-medium text-red-400">Recording…</span>
-            <span className="ml-auto text-sm font-mono text-red-300">{fmt(recorder.seconds)}</span>
+            <span className="text-sm font-medium text-red-400">Recording</span>
+            <span className="ml-auto text-sm font-mono text-red-300">
+              {fmt(recorder.seconds)}
+            </span>
           </div>
+
           <button
             onClick={stopAndSend}
-            className="p-3 rounded-2xl bg-gradient-to-br from-brand-500 to-emerald-600 shadow-lg shadow-brand-500/25 hover:brightness-110 active:scale-95 transition"
-            title="Send"
+            className="p-3 rounded-full bg-gradient-to-br from-brand-500 to-emerald-600 shadow-lg shadow-brand-500/25 hover:brightness-110 active:scale-95 transition"
           >
             <Send className="w-5 h-5" />
           </button>
         </div>
       ) : (
-        /* composer */
-        <div className="flex items-end gap-2 px-3 py-3">
+        /* ---------- WhatsApp-style composer ---------- */
+        <div className="flex items-end gap-1.5 sm:gap-2 px-2 sm:px-3 py-2 sm:py-3">
           <input
             ref={fileRef}
             type="file"
             multiple
             hidden
-            onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }}
+            onChange={(e) => {
+              addFiles(e.target.files);
+              e.target.value = '';
+            }}
+          />
+          <input
+            ref={imgRef}
+            type="file"
+            accept="image/*,video/*"
+            multiple
+            hidden
+            onChange={(e) => {
+              addFiles(e.target.files);
+              e.target.value = '';
+            }}
           />
 
-          <button
-            onClick={() => { setShowEmoji((s) => !s); setShowGif(false); }}
-            className={`p-2.5 rounded-xl transition ${showEmoji ? 'text-brand-400 bg-brand-500/10' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'}`}
-            title="Emoji"
-          >
-            <Smile className="w-5 h-5" />
-          </button>
+          {/* main input pill */}
+          <div className="flex-1 flex items-end gap-0.5 sm:gap-1 px-2 sm:px-3 py-1.5 rounded-full bg-ink-900/80 border border-white/10 focus-within:border-brand-500/40 transition min-w-0">
+            <button
+              onClick={() => {
+                setShowEmoji((s) => !s);
+                setShowGif(false);
+              }}
+              className={`p-2 rounded-full transition shrink-0 ${
+                showEmoji
+                  ? 'text-brand-400 bg-brand-500/10'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+              }`}
+              aria-label="Emoji"
+            >
+              <Smile className="w-5 h-5" />
+            </button>
 
-          <button
-            onClick={() => { setShowGif((s) => !s); setShowEmoji(false); }}
-            className={`p-2.5 rounded-xl transition hidden sm:block ${showGif ? 'text-brand-400 bg-brand-500/10' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'}`}
-            title="GIF"
-          >
-            <Sparkles className="w-5 h-5" />
-          </button>
+            <textarea
+              ref={taRef}
+              rows={1}
+              value={text}
+              onChange={handleChange}
+              onKeyDown={onKeyDown}
+              onPaste={onPaste}
+              placeholder="Message"
+              className="flex-1 resize-none bg-transparent py-2 px-1 text-[15px] placeholder-slate-500 outline-none scroll-thin max-h-[120px] min-w-0"
+            />
 
-          <button
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
-            className="p-2.5 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-white/5 transition disabled:opacity-40"
-            title="Attach (multi-select supported)"
-          >
-            <Paperclip className="w-5 h-5" />
-          </button>
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className="p-2 rounded-full text-slate-400 hover:text-slate-200 hover:bg-white/5 transition shrink-0 disabled:opacity-40"
+              aria-label="Attach"
+            >
+              <Paperclip className="w-5 h-5" />
+            </button>
 
-          <textarea
-            ref={taRef}
-            rows={1}
-            value={text}
-            onChange={handleChange}
-            onKeyDown={onKeyDown}
-            onPaste={onPaste}
-            placeholder="Type a message… (Ctrl+V paste image, drag & drop files)"
-            className="flex-1 resize-none px-4 py-2.5 max-h-[140px] rounded-2xl bg-ink-900/70 border border-white/10 text-[15px] placeholder-slate-500 outline-none transition focus:border-brand-500/40 focus:ring-4 focus:ring-brand-500/10 scroll-thin"
-          />
+            {!hasContent && (
+              <button
+                onClick={() => imgRef.current?.click()}
+                className="p-2 rounded-full text-slate-400 hover:text-slate-200 hover:bg-white/5 transition shrink-0 hidden xs:block"
+                aria-label="Camera"
+              >
+                <Camera className="w-5 h-5" />
+              </button>
+            )}
+          </div>
 
+          {/* send / mic button */}
           {hasContent ? (
             <button
               onClick={submit}
               disabled={disabled || uploading}
-              className="p-3 rounded-2xl bg-gradient-to-br from-brand-500 to-emerald-600 shadow-lg shadow-brand-500/25 transition hover:brightness-110 active:scale-95 disabled:opacity-35"
-              title="Send"
+              className="p-3 rounded-full bg-gradient-to-br from-brand-500 to-emerald-600 shadow-lg shadow-brand-500/25 transition hover:brightness-110 active:scale-95 disabled:opacity-35 shrink-0"
+              aria-label="Send"
             >
-              {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+              {uploading ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Send className="w-5 h-5" />
+              )}
             </button>
           ) : (
             <button
               onClick={startRecording}
               disabled={disabled}
-              className="p-3 rounded-2xl bg-gradient-to-br from-red-500 to-pink-600 shadow-lg shadow-red-500/20 transition hover:brightness-110 active:scale-95 disabled:opacity-35"
-              title="Hold to record voice"
+              className="p-3 rounded-full bg-gradient-to-br from-red-500 to-pink-600 shadow-lg shadow-red-500/20 transition hover:brightness-110 active:scale-95 disabled:opacity-35 shrink-0"
+              aria-label="Record voice"
             >
               <Mic className="w-5 h-5" />
             </button>

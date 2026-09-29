@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { MessagesSquare, Search, X, ChevronUp, ChevronDown } from 'lucide-react';
-import Avatar from './Avatar';
 import MessageBubble from './MessageBubble';
 import MessageInput from './MessageInput';
 import ChatHeader from './ChatHeader';
@@ -32,8 +31,7 @@ function EmptyState() {
       </div>
       <h3 className="text-xl font-semibold mb-2">Welcome to PulseChat</h3>
       <p className="text-sm text-slate-400 max-w-sm leading-relaxed">
-        Select a person from the list to start a private conversation. Send text,
-        photos, GIFs, voice messages — all in real time.
+        Select a person from the list to start chatting.
       </p>
     </div>
   );
@@ -54,12 +52,10 @@ export default function ChatWindow({
   const [replyTo, setReplyTo] = useState(null);
   const [confirm, setConfirm] = useState(null);
 
-  /* scroll to bottom on new messages */
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages.length, typing]);
 
-  /* filter messages */
   const groups = useMemo(() => groupByDay(messages), [messages]);
 
   const filteredIds = useMemo(() => {
@@ -71,7 +67,9 @@ export default function ChatWindow({
   }, [searchQ, messages]);
 
   const scrollToMessage = (id) => {
-    document.getElementById(`msg-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document
+      .getElementById(`msg-${id}`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
   const nextMatch = () => {
@@ -87,7 +85,6 @@ export default function ChatWindow({
     scrollToMessage(filteredIds[i]);
   };
 
-  /* delete confirm */
   const askDelete = (msg, forEveryone) => {
     setConfirm({ msg, forEveryone });
   };
@@ -101,7 +98,7 @@ export default function ChatWindow({
   if (!user) return <EmptyState />;
 
   return (
-    <section className="flex-1 flex flex-col min-w-0 chat-bg">
+    <section className="flex-1 flex flex-col min-w-0 chat-bg h-full">
       <ChatHeader
         user={user}
         typing={typing}
@@ -113,47 +110,68 @@ export default function ChatWindow({
         onOpenSearch={() => setSearchOpen((s) => !s)}
         onCloseChat={onBack}
         onAction={(key) => {
-          if (key === 'search') { setSearchOpen(true); return; }
-          if (key === 'close') { onBack?.(); return; }
+          if (key === 'search') {
+            setSearchOpen(true);
+            return;
+          }
+          if (key === 'close') {
+            onBack?.();
+            return;
+          }
           onAction?.(key);
         }}
       />
 
-      {/* search bar */}
       {searchOpen && (
-        <div className="px-3 md:px-5 py-2 glass border-b border-white/5 flex items-center gap-2 animate-pop-in">
-          <Search className="w-4 h-4 text-slate-400" />
+        <div className="px-2 sm:px-5 py-2 glass-solid border-b border-white/10 flex items-center gap-2 animate-pop-in shrink-0">
+          <Search className="w-4 h-4 text-slate-400 shrink-0" />
           <input
             autoFocus
             value={searchQ}
-            onChange={(e) => { setSearchQ(e.target.value); setSearchIdx(0); }}
+            onChange={(e) => {
+              setSearchQ(e.target.value);
+              setSearchIdx(0);
+            }}
             placeholder="Search in messages…"
-            className="flex-1 px-3 py-2 rounded-lg bg-ink-900/60 border border-white/5 text-sm outline-none focus:border-brand-500/40"
+            className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-ink-900/80 border border-white/10 text-sm outline-none focus:border-brand-500/40"
           />
           {searchQ && (
-            <span className="text-xs text-slate-400">
+            <span className="text-xs text-slate-400 shrink-0">
               {filteredIds.length ? `${searchIdx + 1}/${filteredIds.length}` : '0'}
             </span>
           )}
-          <button onClick={prevMatch} disabled={!filteredIds.length} className="p-1.5 rounded-lg hover:bg-white/5 disabled:opacity-40">
+          <button
+            onClick={prevMatch}
+            disabled={!filteredIds.length}
+            className="p-1.5 rounded-lg hover:bg-white/5 disabled:opacity-40 shrink-0"
+          >
             <ChevronUp className="w-4 h-4" />
           </button>
-          <button onClick={nextMatch} disabled={!filteredIds.length} className="p-1.5 rounded-lg hover:bg-white/5 disabled:opacity-40">
+          <button
+            onClick={nextMatch}
+            disabled={!filteredIds.length}
+            className="p-1.5 rounded-lg hover:bg-white/5 disabled:opacity-40 shrink-0"
+          >
             <ChevronDown className="w-4 h-4" />
           </button>
-          <button onClick={() => { setSearchOpen(false); setSearchQ(''); }} className="p-1.5 rounded-lg hover:bg-white/5">
+          <button
+            onClick={() => {
+              setSearchOpen(false);
+              setSearchQ('');
+            }}
+            className="p-1.5 rounded-lg hover:bg-white/5 shrink-0"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
-      {/* messages */}
-      <div className="flex-1 overflow-y-auto scroll-thin px-3 md:px-8 py-5">
+      <div className="flex-1 overflow-y-auto scroll-thin px-2 sm:px-4 md:px-8 py-4 sm:py-5">
         <div className="max-w-3xl mx-auto">
           {groups.map((g) => (
             <div key={g.label}>
-              <div className="flex justify-center my-5">
-                <span className="px-3.5 py-1 rounded-full text-[11px] font-medium text-slate-400 bg-white/[0.05] border border-white/5">
+              <div className="flex justify-center my-4 sm:my-5">
+                <span className="px-3.5 py-1 rounded-full text-[11px] font-medium text-slate-400 bg-white/[0.06] border border-white/5">
                   {g.label}
                 </span>
               </div>
@@ -163,7 +181,11 @@ export default function ChatWindow({
                   <div
                     key={m.id}
                     id={`msg-${m.id}`}
-                    className={isHighlighted ? 'ring-2 ring-brand-500/60 rounded-2xl transition' : ''}
+                    className={
+                      isHighlighted
+                        ? 'ring-2 ring-brand-500/60 rounded-2xl transition'
+                        : ''
+                    }
                   >
                     <MessageBubble
                       message={m}
@@ -183,7 +205,6 @@ export default function ChatWindow({
         </div>
       </div>
 
-      {/* input */}
       <MessageInput
         onSend={onSend}
         onTyping={onTyping}
@@ -191,7 +212,6 @@ export default function ChatWindow({
         onCancelReply={() => setReplyTo(null)}
       />
 
-      {/* delete confirmation */}
       <ConfirmDialog
         open={!!confirm}
         title={confirm?.forEveryone ? 'Delete for everyone?' : 'Delete for me?'}

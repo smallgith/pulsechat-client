@@ -13,9 +13,10 @@ import {
   setBaseTitle,
   setUnreadTotal,
   showBrowserNotification,
+  unlockAudio,
 } from './lib/notification';
 
-const USER_KEY = 'pulsechat.user'; // JSON { phone, name }
+const USER_KEY = 'pulsechat.user';
 
 const mergeById = (a = [], b = []) => {
   const map = new Map();
@@ -25,8 +26,11 @@ const mergeById = (a = [], b = []) => {
 
 export default function App() {
   const [me, setMe] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null'); }
-    catch { return null; }
+    try {
+      return JSON.parse(localStorage.getItem(USER_KEY) || 'null');
+    } catch {
+      return null;
+    }
   });
   const [authError, setAuthError] = useState('');
   const [connected, setConnected] = useState(false);
@@ -39,18 +43,15 @@ export default function App() {
   const [muted, setMuted] = useState(new Set());
   const [favorites, setFavorites] = useState(new Set());
 
-  /* ---------- toast ---------- */
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
 
-  /* ---------- call state ---------- */
-  const [call, setCall] = useState(null);       // { type, peer, peerName, state, callId, isIncoming }
+  const [call, setCall] = useState(null);
   const [localStream, setLocalStream] = useState(null);
   const [remoteStream, setRemoteStream] = useState(null);
   const sessionRef = useRef(null);
   const callRef = useRef(null);
 
-  /* ---------- delete chat confirm ---------- */
   const [confirm, setConfirm] = useState(null);
 
   const socketRef = useRef(null);
@@ -58,50 +59,53 @@ export default function App() {
   const usersRef = useRef([]);
   const meRef = useRef(null);
 
-  /* ================= title + favicon ================= */
-  useEffect(() => { setBaseTitle('PulseChat'); }, []);
+  useEffect(() => {
+    setBaseTitle('PulseChat');
+  }, []);
 
   useEffect(() => {
     const total = Object.values(unread).reduce((s, n) => s + n, 0);
     setUnreadTotal(total);
   }, [unread]);
 
-  useEffect(() => { selectedRef.current = selected; }, [selected]);
-  useEffect(() => { usersRef.current = users; }, [users]);
-  useEffect(() => { meRef.current = me; }, [me]);
-  useEffect(() => { callRef.current = call; }, [call]);
+  useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
+  useEffect(() => {
+    usersRef.current = users;
+  }, [users]);
+  useEffect(() => {
+    meRef.current = me;
+  }, [me]);
+  useEffect(() => {
+    callRef.current = call;
+  }, [call]);
 
-  /* ================= audio unlock ================= */
-
-useEffect(() => {
-  import('./lib/notification').then(({ unlockAudio }) => {
-    const unlock = async () => {
+  /* ============ AUDIO UNLOCK — FIRST GESTURE ============ */
+  useEffect(() => {
+    const handler = async () => {
       await unlockAudio();
-      document.removeEventListener('click', unlock);
-      document.removeEventListener('touchstart', unlock);
-      document.removeEventListener('keydown', unlock);
+      document.removeEventListener('pointerdown', handler);
+      document.removeEventListener('keydown', handler);
+      document.removeEventListener('touchstart', handler);
     };
-
-    document.addEventListener('click', unlock, { once: true });
-    document.addEventListener('touchstart', unlock, { once: true });
-    document.addEventListener('keydown', unlock, { once: true });
-
+    document.addEventListener('pointerdown', handler, { once: true });
+    document.addEventListener('keydown', handler, { once: true });
+    document.addEventListener('touchstart', handler, { once: true });
     return () => {
-      document.removeEventListener('click', unlock);
-      document.removeEventListener('touchstart', unlock);
-      document.removeEventListener('keydown', unlock);
+      document.removeEventListener('pointerdown', handler);
+      document.removeEventListener('keydown', handler);
+      document.removeEventListener('touchstart', handler);
     };
-  });
-}, []);
+  }, []);
 
-  /* ================= toast helper ================= */
   const pushToast = useCallback((data) => {
     clearTimeout(toastTimer.current);
     setToast(data);
     toastTimer.current = setTimeout(() => setToast(null), 5000);
   }, []);
 
-  /* ================= socket ================= */
+  /* ============ SOCKET ============ */
   useEffect(() => {
     if (!me?.phone) return;
 
@@ -136,9 +140,10 @@ useEffect(() => {
     socket.on('mute_list', (arr) => setMuted(new Set(arr)));
     socket.on('favorite_list', (arr) => setFavorites(new Set(arr)));
 
-    /* --------- MESSAGE --------- */
+    /* ------- MESSAGE ------- */
     socket.on('message', (msg) => {
       const rid = msg.roomId || roomId(msg.from, msg.to);
+
       let isNew = false;
       setConversations((prev) => {
         const list = prev[rid] || [];
@@ -146,13 +151,17 @@ useEffect(() => {
         isNew = true;
         return { ...prev, [rid]: [...list, msg] };
       });
+
       if (msg.from === me.phone || !isNew) return;
 
       const active = selectedRef.current;
       const isActiveChat = active?.phone === msg.from;
-      const isFocused = document.visibilityState === 'visible' && document.hasFocus();
+      const isFocused =
+        document.visibilityState === 'visible' && document.hasFocus();
       const isTabVisible = document.visibilityState === 'visible';
-      const isMuted = muted.has(msg.from);
+
+      const mutedSet = muted;
+      const isMuted = mutedSet.has(msg.from);
 
       if (isActiveChat && isFocused) {
         socket.emit('seen', { to: msg.from, roomId: rid });
@@ -181,7 +190,9 @@ useEffect(() => {
       const senderName = sender?.name || msg.fromName || msg.from;
 
       const openChat = () => {
-        setSelected(sender || { phone: msg.from, name: senderName, joinedAt: Date.now() });
+        setSelected(
+          sender || { phone: msg.from, name: senderName, joinedAt: Date.now() }
+        );
         setUnread((prev) => {
           const n = { ...prev };
           delete n[rid];
@@ -192,19 +203,23 @@ useEffect(() => {
       const shouldShowDesktop = !isActiveChat || !isTabVisible;
       if (shouldShowDesktop && !isMuted) {
         showBrowserNotification({
-          title: `💬 ${senderName}`,
+          title: senderName,
           body: preview,
           tag: `chat-${rid}`,
           force: true,
           onClick: openChat,
+          chatUrl: '/',
         });
       }
 
-      if (isTabVisible && !isActiveChat) {
+      if (isTabVisible && !isActiveChat && !isMuted) {
         pushToast({
           from: senderName,
           preview,
-          time: new Date(msg.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          time: new Date(msg.time).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
           canReply: true,
           _raw: msg,
         });
@@ -225,7 +240,10 @@ useEffect(() => {
         if (!prev[rid]) return prev;
         return {
           ...prev,
-          [rid]: prev[rid].map((m) => ({ ...m, deletedFor: [...(m.deletedFor || []), me.phone] })),
+          [rid]: prev[rid].map((m) => ({
+            ...m,
+            deletedFor: [...(m.deletedFor || []), me.phone],
+          })),
         };
       });
     });
@@ -243,15 +261,16 @@ useEffect(() => {
         if (!list) return prev;
         return {
           ...prev,
-          [rid]: list.map((m) => m.from === me.phone ? { ...m, status: 'seen' } : m),
+          [rid]: list.map((m) =>
+            m.from === me.phone ? { ...m, status: 'seen' } : m
+          ),
         };
       });
     });
 
-    /* --------- CALL signaling --------- */
+    /* ------- CALL SIGNALING ------- */
     socket.on('incoming_call', ({ from, fromName, type, offer, callId }) => {
       if (callRef.current) {
-        // already in a call → reject
         socket.emit('call_reject', { to: from, callId });
         return;
       }
@@ -273,7 +292,9 @@ useEffect(() => {
       try {
         await s.acceptAnswer(answer);
         setCall((c) => (c ? { ...c, state: 'connected' } : c));
-      } catch (e) { console.error(e); }
+      } catch (e) {
+        console.error(e);
+      }
     });
 
     socket.on('call_ice', async ({ candidate, callId }) => {
@@ -289,7 +310,6 @@ useEffect(() => {
 
     socket.on('call_ended', () => {
       endCall(true);
-      pushToast({ from: 'Call', preview: 'Call ended', time: '' });
     });
 
     return () => {
@@ -300,7 +320,7 @@ useEffect(() => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me?.phone]);
 
-  /* ================= seen on focus ================= */
+  /* ---------- seen on window focus ---------- */
   useEffect(() => {
     const onFocus = () => {
       const active = selectedRef.current;
@@ -310,36 +330,46 @@ useEffect(() => {
         socketRef.current?.emit('seen', { to: active.phone, roomId: rid });
         setUnread((prev) => {
           if (!prev[rid]) return prev;
-          const n = { ...prev }; delete n[rid]; return n;
+          const n = { ...prev };
+          delete n[rid];
+          return n;
         });
       }
     };
     window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
   }, []);
 
-  /* ================= select user ================= */
-  const handleSelect = useCallback((user) => {
-    setSelected(user);
-    setTypingFrom(null);
-    const rid = roomId(me.phone, user.phone);
-    setUnread((prev) => {
-      if (!prev[rid]) return prev;
-      const n = { ...prev }; delete n[rid]; return n;
-    });
-    const socket = socketRef.current;
-    if (!socket) return;
-    socket.emit('get_history', { with: user.phone }, (res) => {
-      if (!res) return;
-      setConversations((prev) => ({
-        ...prev,
-        [res.roomId]: mergeById(prev[res.roomId], res.messages),
-      }));
-    });
-    socket.emit('seen', { to: user.phone, roomId: rid });
-  }, [me?.phone]);
+  /* ---------- select ---------- */
+  const handleSelect = useCallback(
+    (user) => {
+      setSelected(user);
+      setTypingFrom(null);
+      const rid = roomId(me.phone, user.phone);
+      setUnread((prev) => {
+        if (!prev[rid]) return prev;
+        const n = { ...prev };
+        delete n[rid];
+        return n;
+      });
+      const socket = socketRef.current;
+      if (!socket) return;
+      socket.emit('get_history', { with: user.phone }, (res) => {
+        if (!res) return;
+        setConversations((prev) => ({
+          ...prev,
+          [res.roomId]: mergeById(prev[res.roomId], res.messages),
+        }));
+      });
+      socket.emit('seen', { to: user.phone, roomId: rid });
+    },
+    [me?.phone]
+  );
 
-  /* ================= send ================= */
   const handleSend = useCallback((payload) => {
     const target = selectedRef.current;
     if (!target || !socketRef.current) return;
@@ -352,25 +382,26 @@ useEffect(() => {
     socketRef.current?.emit('typing', { to: target.phone, isTyping });
   }, []);
 
-  /* ================= delete message ================= */
-  const handleDeleteMessage = useCallback((msg, forEveryone) => {
-    if (!socketRef.current) return;
-    socketRef.current.emit('delete_message', {
-      roomId: msg.roomId,
-      messageId: msg.id,
-      forEveryone,
-    }, (res) => {
-      if (res?.ok) {
-        pushToast({
-          from: 'Message',
-          preview: forEveryone ? 'Deleted for everyone' : 'Deleted for you',
-          time: '',
-        });
-      }
-    });
-  }, [pushToast]);
+  const handleDeleteMessage = useCallback(
+    (msg, forEveryone) => {
+      if (!socketRef.current) return;
+      socketRef.current.emit(
+        'delete_message',
+        { roomId: msg.roomId, messageId: msg.id, forEveryone },
+        (res) => {
+          if (res?.ok) {
+            pushToast({
+              from: 'Message',
+              preview: forEveryone ? 'Deleted for everyone' : 'Deleted for you',
+              time: '',
+            });
+          }
+        }
+      );
+    },
+    [pushToast]
+  );
 
-  /* ================= react ================= */
   const handleReactMessage = useCallback((msg, emoji) => {
     socketRef.current?.emit('react_message', {
       roomId: msg.roomId,
@@ -379,33 +410,44 @@ useEffect(() => {
     });
   }, []);
 
-  /* ================= quick reply ================= */
-  const handleQuickReply = useCallback((text) => {
-    if (!toast?._raw || !socketRef.current) return;
-    socketRef.current.emit('send_message', { to: toast._raw.from, text });
-  }, [toast]);
+  const handleQuickReply = useCallback(
+    (text) => {
+      if (!toast?._raw || !socketRef.current) return;
+      socketRef.current.emit('send_message', { to: toast._raw.from, text });
+    },
+    [toast]
+  );
 
-  /* ================= CHAT MENU ACTIONS ================= */
+  /* ---------- chat menu actions ---------- */
   const handleChatAction = (key) => {
     const user = selectedRef.current;
     if (!user) return;
     const socket = socketRef.current;
 
     switch (key) {
-      case 'mute':
-        {
-          const isMuted = muted.has(user.phone);
-          socket?.emit('toggle_mute', { with: user.phone, muted: !isMuted });
-          pushToast({ from: 'Chat', preview: isMuted ? 'Unmuted' : 'Muted', time: '' });
-        }
+      case 'mute': {
+        const isMuted = muted.has(user.phone);
+        socket?.emit('toggle_mute', { with: user.phone, muted: !isMuted });
+        pushToast({
+          from: 'Chat',
+          preview: isMuted ? 'Unmuted' : 'Muted',
+          time: '',
+        });
         break;
-      case 'favorite':
-        {
-          const isFav = favorites.has(user.phone);
-          socket?.emit('toggle_favorite', { with: user.phone, favorite: !isFav });
-          pushToast({ from: 'Chat', preview: isFav ? 'Removed from favourites' : 'Added to favourites', time: '' });
-        }
+      }
+      case 'favorite': {
+        const isFav = favorites.has(user.phone);
+        socket?.emit('toggle_favorite', {
+          with: user.phone,
+          favorite: !isFav,
+        });
+        pushToast({
+          from: 'Chat',
+          preview: isFav ? 'Removed from favourites' : 'Added to favourites',
+          time: '',
+        });
         break;
+      }
       case 'clear':
         setConfirm({
           title: 'Clear chat?',
@@ -429,36 +471,26 @@ useEffect(() => {
           },
         });
         break;
-      case 'block':
-        pushToast({ from: 'Chat', preview: 'Block feature coming soon', time: '' });
-        break;
-      case 'report':
-        pushToast({ from: 'Chat', preview: 'Report submitted', time: '' });
-        break;
       case 'contact':
-        pushToast({ from: 'Contact', preview: `${user.name || user.phone}`, time: '' });
+        pushToast({
+          from: 'Contact',
+          preview: `${user.name || user.phone}`,
+          time: '',
+        });
         break;
-      case 'disappearing':
-        pushToast({ from: 'Chat', preview: 'Disappearing messages: coming soon', time: '' });
+      case 'call_link': {
+        const link = `${window.location.origin}/?call=${user.phone}`;
+        navigator.clipboard.writeText(link);
+        pushToast({ from: 'Call', preview: 'Call link copied', time: '' });
         break;
-      case 'call_link':
-        {
-          const link = `${window.location.origin}/?call=${user.phone}`;
-          navigator.clipboard.writeText(link);
-          pushToast({ from: 'Call', preview: 'Call link copied', time: '' });
-        }
-        break;
-      case 'schedule':
-      case 'group_call':
-      case 'list':
-        pushToast({ from: 'Chat', preview: `${key} coming soon`, time: '' });
-        break;
+      }
       default:
+        pushToast({ from: 'Chat', preview: `${key} — coming soon`, time: '' });
         break;
     }
   };
 
-  /* ================= CALLS ================= */
+  /* ---------- CALLS ---------- */
   const startCall = async (type) => {
     const target = selectedRef.current;
     if (!target || !socketRef.current) return;
@@ -470,7 +502,11 @@ useEffect(() => {
       peerId: target.phone,
       type,
       onIce: (candidate) =>
-        socketRef.current.emit('call_ice', { to: target.phone, candidate, callId }),
+        socketRef.current.emit('call_ice', {
+          to: target.phone,
+          candidate,
+          callId,
+        }),
       onRemoteStream: (stream) => setRemoteStream(stream),
       onEnded: () => endCall(true),
     });
@@ -498,7 +534,11 @@ useEffect(() => {
       });
     } catch (e) {
       console.error(e);
-      pushToast({ from: 'Call', preview: 'Could not access mic/camera', time: '' });
+      pushToast({
+        from: 'Call',
+        preview: 'Could not access mic/camera',
+        time: '',
+      });
       session.destroy();
     }
   };
@@ -506,13 +546,18 @@ useEffect(() => {
   const acceptCall = async () => {
     const c = callRef.current;
     if (!c || !socketRef.current) return;
+
     const session = new CallSession({
       socket: socketRef.current,
       callId: c.callId,
       peerId: c.peer,
       type: c.type,
       onIce: (candidate) =>
-        socketRef.current.emit('call_ice', { to: c.peer, candidate, callId: c.callId }),
+        socketRef.current.emit('call_ice', {
+          to: c.peer,
+          candidate,
+          callId: c.callId,
+        }),
       onRemoteStream: (stream) => setRemoteStream(stream),
       onEnded: () => endCall(true),
     });
@@ -557,7 +602,6 @@ useEffect(() => {
     setCall(null);
   };
 
-  /* ================= logout ================= */
   const handleLogout = () => {
     socketRef.current?.disconnect();
     localStorage.removeItem(USER_KEY);
@@ -577,13 +621,15 @@ useEffect(() => {
     setMe(u);
   };
 
-  /* ================= derived ================= */
+  /* ---------- derived ---------- */
   const lastMessages = useMemo(() => {
     const out = {};
     users.forEach((u) => {
       const rid = roomId(me?.phone, u.phone);
       const list = conversations[rid] || [];
-      const visible = list.filter((m) => !m.deletedFor?.includes(me?.phone));
+      const visible = list.filter(
+        (m) => !m.deletedFor?.includes(me?.phone)
+      );
       out[u.phone] = visible[visible.length - 1] || null;
     });
     return out;
@@ -595,16 +641,24 @@ useEffect(() => {
     return list.filter((m) => !m.deletedFor?.includes(me?.phone));
   }, [selected, conversations, me?.phone]);
 
-  const typingForSelected = !!(typingFrom && selected && typingFrom.from === selected.phone);
+  const typingForSelected = !!(
+    typingFrom &&
+    selected &&
+    typingFrom.from === selected.phone
+  );
 
-  /* ================= render ================= */
   if (!me?.phone) {
     return <Login onJoin={handleJoin} error={authError} />;
   }
 
   return (
     <div className="h-full h-[100dvh] flex overflow-hidden">
-      <div className={`${selected ? 'hidden md:flex' : 'flex'} w-full md:w-auto`}>
+      {/* Sidebar — hidden on mobile when chat selected */}
+      <div
+        className={`${
+          selected ? 'hidden md:flex' : 'flex'
+        } w-full md:w-auto md:shrink-0`}
+      >
         <Sidebar
           me={me.name}
           users={users}
@@ -619,7 +673,12 @@ useEffect(() => {
         />
       </div>
 
-      <div className={`${selected ? 'flex' : 'hidden md:flex'} flex-1 min-w-0`}>
+      {/* Chat — full width on mobile when selected */}
+      <div
+        className={`${
+          selected ? 'flex' : 'hidden md:flex'
+        } flex-1 min-w-0 w-full`}
+      >
         <ChatWindow
           me={me.phone}
           user={selected}
@@ -644,7 +703,13 @@ useEffect(() => {
         onOpen={() => {
           if (!toast?._raw) return;
           const sender = users.find((x) => x.phone === toast._raw.from);
-          handleSelect(sender || { phone: toast._raw.from, name: toast._raw.from, joinedAt: Date.now() });
+          handleSelect(
+            sender || {
+              phone: toast._raw.from,
+              name: toast._raw.from,
+              joinedAt: Date.now(),
+            }
+          );
           setToast(null);
         }}
         onReply={handleQuickReply}
@@ -652,7 +717,6 @@ useEffect(() => {
 
       <NotificationPrompt />
 
-      {/* Call UI */}
       {call && (
         <CallModal
           call={call}
@@ -665,7 +729,6 @@ useEffect(() => {
         />
       )}
 
-      {/* Generic confirm dialog for chat menu actions */}
       <ConfirmDialog
         open={!!confirm}
         title={confirm?.title}

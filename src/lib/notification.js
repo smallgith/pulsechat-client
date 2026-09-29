@@ -1,39 +1,40 @@
 /* ============================================================
-   Notification Manager — sound + browser + tab title + favicon
+   Notifications — sound + browser + tab badge
    ============================================================ */
 
 const SOUND_URL = '/notification.mp3';
-const ORIGINAL_TITLE = document.title || 'PulseChat';
+const BASE_TITLE = 'PulseChat';
 const FAVICON_ID = 'pulsechat-favicon';
 
-/* ================== AUDIO ================== */
+/* ==================== AUDIO ==================== */
 let audioCtx = null;
 let audioBuffer = null;
-let audioUnlocked = false;
-let soundCacheBlobUrl = null;
+let unlocked = false;
 
-/* ---------- unlock on user gesture ---------- */
+const ensureCtx = () => {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  return audioCtx;
+};
+
 export const unlockAudio = async () => {
   try {
-    if (!audioCtx) {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    if (audioCtx.state === 'suspended') {
-      await audioCtx.resume();
-    }
+    const ctx = ensureCtx();
+    if (ctx.state === 'suspended') await ctx.resume();
 
-    // silent beep to keep context alive
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
+    // silent beep
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
     gain.gain.value = 0.0001;
     osc.connect(gain);
-    gain.connect(audioCtx.destination);
+    gain.connect(ctx.destination);
     osc.start(0);
     osc.stop(0.01);
 
-    audioUnlocked = true;
+    unlocked = true;
 
-    // pre-load sound file
+    // preload mp3
     loadSound().catch(() => {});
     return true;
   } catch (e) {
@@ -42,83 +43,75 @@ export const unlockAudio = async () => {
   }
 };
 
-/* ---------- load mp3 file ---------- */
 const loadSound = async () => {
   if (audioBuffer) return audioBuffer;
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  }
   try {
-    const res = await fetch(SOUND_URL, { cache: 'force-cache' });
+    const ctx = ensureCtx();
+    const res = await fetch(SOUND_URL);
     if (!res.ok) throw new Error('sound 404');
-    const arr = await res.arrayBuffer();
-    audioBuffer = await audioCtx.decodeAudioData(arr);
+    const buf = await res.arrayBuffer();
+    audioBuffer = await ctx.decodeAudioData(buf);
     console.log('[audio] sound loaded ✓');
     return audioBuffer;
   } catch (e) {
-    console.warn('[audio] load failed, using synth fallback', e);
+    console.warn('[audio] load failed', e);
     return null;
   }
 };
 
-/* ---------- play notification sound ---------- */
 export const playSound = async () => {
   try {
-    if (!audioCtx) {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    if (audioCtx.state === 'suspended') {
-      await audioCtx.resume();
+    const ctx = ensureCtx();
+    if (ctx.state === 'suspended') {
+      await ctx.resume();
     }
 
-    // try mp3 first
     const buf = await loadSound();
+
     if (buf) {
-      const src = audioCtx.createBufferSource();
+      const src = ctx.createBufferSource();
       src.buffer = buf;
-      const gain = audioCtx.createGain();
-      gain.gain.value = 0.6;
+      const gain = ctx.createGain();
+      gain.gain.value = 0.7;
       src.connect(gain);
-      gain.connect(audioCtx.destination);
+      gain.connect(ctx.destination);
       src.start(0);
       return;
     }
 
-    // fallback: synthesized WhatsApp-like ding
-    const now = audioCtx.currentTime;
+    // fallback synth ding
+    const now = ctx.currentTime;
 
-    // note 1
-    const osc1 = audioCtx.createOscillator();
-    const gain1 = audioCtx.createGain();
-    osc1.type = 'sine';
-    osc1.frequency.setValueAtTime(880, now);
-    osc1.frequency.exponentialRampToValueAtTime(1320, now + 0.08);
-    gain1.gain.setValueAtTime(0.0001, now);
-    gain1.gain.exponentialRampToValueAtTime(0.35, now + 0.015);
-    gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
-    osc1.connect(gain1);
-    gain1.connect(audioCtx.destination);
-    osc1.start(now);
-    osc1.stop(now + 0.26);
+    const o1 = ctx.createOscillator();
+    const g1 = ctx.createGain();
+    o1.type = 'sine';
+    o1.frequency.setValueAtTime(880, now);
+    o1.frequency.exponentialRampToValueAtTime(1320, now + 0.08);
+    g1.gain.setValueAtTime(0.0001, now);
+    g1.gain.exponentialRampToValueAtTime(0.4, now + 0.015);
+    g1.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
+    o1.connect(g1);
+    g1.connect(ctx.destination);
+    o1.start(now);
+    o1.stop(now + 0.3);
 
-    // note 2
-    const osc2 = audioCtx.createOscillator();
-    const gain2 = audioCtx.createGain();
-    osc2.type = 'sine';
-    osc2.frequency.setValueAtTime(1175, now + 0.12);
-    gain2.gain.setValueAtTime(0.0001, now + 0.12);
-    gain2.gain.exponentialRampToValueAtTime(0.3, now + 0.14);
-    gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
-    osc2.connect(gain2);
-    gain2.connect(audioCtx.destination);
-    osc2.start(now + 0.12);
-    osc2.stop(now + 0.42);
+    const o2 = ctx.createOscillator();
+    const g2 = ctx.createGain();
+    o2.type = 'sine';
+    o2.frequency.setValueAtTime(1175, now + 0.12);
+    g2.gain.setValueAtTime(0.0001, now + 0.12);
+    g2.gain.exponentialRampToValueAtTime(0.35, now + 0.14);
+    g2.gain.exponentialRampToValueAtTime(0.0001, now + 0.42);
+    o2.connect(g2);
+    g2.connect(ctx.destination);
+    o2.start(now + 0.12);
+    o2.stop(now + 0.45);
   } catch (e) {
     console.warn('[audio] play failed', e);
   }
 };
 
-/* ================== BROWSER NOTIFICATIONS ================== */
+/* ==================== BROWSER NOTIFICATIONS ==================== */
 export const getPermission = () =>
   typeof Notification !== 'undefined' ? Notification.permission : 'unsupported';
 
@@ -126,10 +119,8 @@ export const requestPermission = async () => {
   if (typeof Notification === 'undefined') return 'unsupported';
   if (Notification.permission === 'granted') return 'granted';
   if (Notification.permission === 'denied') return 'denied';
-
   try {
-    const p = await Notification.requestPermission();
-    return p;
+    return await Notification.requestPermission();
   } catch {
     return 'denied';
   }
@@ -142,49 +133,49 @@ export const showBrowserNotification = async ({
   tag,
   onClick,
   force = false,
-}) => {
+  chatUrl = '/',
+} = {}) => {
   if (typeof Notification === 'undefined') return null;
   if (Notification.permission !== 'granted') return null;
 
-  // skip if tab focused AND not forced
+  // Don't skip if tab focused when force=true
   if (!force && document.visibilityState === 'visible' && document.hasFocus()) {
     return null;
   }
 
+  const opts = {
+    body: body || '',
+    icon: icon || '/favicon.ico',
+    badge: '/favicon.ico',
+    tag: tag || 'pulsechat',
+    renotify: true,
+    silent: true, // we play sound ourselves
+    vibrate: [200, 100, 200],
+    data: { url: chatUrl },
+  };
+
   try {
-    // prefer service worker (works on mobile + background)
-    if (navigator.serviceWorker?.controller) {
-      const reg = await navigator.serviceWorker.ready;
-      await reg.showNotification(title || 'PulseChat', {
-        body: body || '',
-        icon: icon || '/favicon.ico',
-        badge: '/favicon.ico',
-        tag: tag || 'pulsechat',
-        renotify: true,
-        silent: true, // we play our own sound
-        vibrate: [200, 100, 200],
-        data: { url: '/' },
-      });
-      return null;
+    // Prefer Service Worker (mobile + background support)
+    if ('serviceWorker' in navigator) {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        if (reg && reg.showNotification) {
+          await reg.showNotification(title || 'PulseChat', opts);
+          return true;
+        }
+      } catch (e) {
+        console.warn('[notif] SW show failed, falling back', e);
+      }
     }
 
-    // fallback: direct Notification API
-    const n = new Notification(title || 'PulseChat', {
-      body: body || '',
-      icon: icon || '/favicon.ico',
-      badge: '/favicon.ico',
-      tag: tag || 'pulsechat',
-      renotify: true,
-      silent: true,
-    });
-
+    // Fallback: direct Notification
+    const n = new Notification(title || 'PulseChat', opts);
     n.onclick = () => {
       window.focus();
       n.close();
       onClick?.();
     };
-
-    setTimeout(() => n.close(), 7000);
+    setTimeout(() => n.close(), 8000);
     return n;
   } catch (e) {
     console.warn('[notif] show failed', e);
@@ -192,18 +183,18 @@ export const showBrowserNotification = async ({
   }
 };
 
-/* ================== TAB TITLE + FAVICON ================== */
-let baseTitle = ORIGINAL_TITLE;
+/* ==================== TAB TITLE + FAVICON ==================== */
 let unreadTotal = 0;
 
 export const setBaseTitle = (t) => {
-  baseTitle = t || 'PulseChat';
-  document.title = unreadTotal > 0 ? `(${unreadTotal}) ${baseTitle}` : baseTitle;
+  const base = t || BASE_TITLE;
+  document.title = unreadTotal > 0 ? `(${unreadTotal}) ${base}` : base;
 };
 
 export const setUnreadTotal = (n) => {
   unreadTotal = Math.max(0, n | 0);
-  document.title = unreadTotal > 0 ? `(${unreadTotal}) ${baseTitle}` : baseTitle;
+  document.title =
+    unreadTotal > 0 ? `(${unreadTotal}) ${BASE_TITLE}` : BASE_TITLE;
   updateFavicon(unreadTotal > 0);
 };
 

@@ -1,46 +1,52 @@
 /* ============================================================
-   Service Worker — Handles notifications + PWA caching
+   Service Worker — Mobile/Desktop notifications
    ============================================================ */
 
-const CACHE = 'pulsechat-v1';
+const CACHE_NAME = 'pulsechat-v2';
 
-/* ------------ install ------------ */
-self.addEventListener('install', (e) => {
+self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-self.addEventListener('activate', (e) => {
-  e.waitUntil(self.clients.claim());
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((names) =>
+      Promise.all(
+        names.filter((n) => n !== CACHE_NAME).map((n) => caches.delete(n))
+      )
+    )
+  );
+  self.clients.claim();
 });
 
-/* ------------ notification click ------------ */
+/* ---------- notification click ---------- */
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
   const urlToOpen = event.notification.data?.url || '/';
 
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
-      // existing tab focus
-      for (const client of list) {
-        if (client.url.includes(self.location.origin)) {
-          client.focus();
-          return client.navigate(urlToOpen);
+    self.clients
+      .matchAll({ type: 'window', includeUncontrolled: true })
+      .then((clientList) => {
+        for (const client of clientList) {
+          if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+            return client.focus();
+          }
         }
-      }
-      // athva navu kholo
-      if (clients.openWindow) return clients.openWindow(urlToOpen);
-    })
+        if (self.clients.openWindow) {
+          return self.clients.openWindow(urlToOpen);
+        }
+      })
   );
 });
 
-/* ------------ push notification (future) ------------ */
+/* ---------- push (future) ---------- */
 self.addEventListener('push', (event) => {
   let data = { title: 'PulseChat', body: 'New message' };
   try {
     if (event.data) data = event.data.json();
   } catch {}
-
   event.waitUntil(
     self.registration.showNotification(data.title || 'PulseChat', {
       body: data.body || '',
@@ -49,6 +55,15 @@ self.addEventListener('push', (event) => {
       tag: data.tag || 'pulsechat',
       data: { url: data.url || '/' },
       vibrate: [200, 100, 200],
+      requireInteraction: false,
     })
   );
+});
+
+/* ---------- offline fallback ---------- */
+self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return;
+  // Don't intercept API
+  const url = new URL(event.request.url);
+  if (url.pathname.startsWith('/api') || url.pathname.startsWith('/socket.io')) return;
 });
