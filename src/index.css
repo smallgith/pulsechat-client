@@ -7,18 +7,44 @@
   body,
   #root {
     height: 100%;
+    /* mobile viewport height fix */
+    height: 100dvh;
+    overscroll-behavior: none;
   }
+
   body {
     @apply bg-ink-900 text-slate-100 antialiased;
     font-family: 'Inter', system-ui, sans-serif;
+    /* mobile: prevent pull-to-refresh on chat area */
+    overscroll-behavior-y: contain;
   }
+
   * {
     -webkit-tap-highlight-color: transparent;
+  }
+
+  /* iOS notch support */
+  @supports (padding: env(safe-area-inset-top)) {
+    body {
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+  }
+
+  /* prevent iOS input zoom */
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+
+  /* iOS smooth scroll */
+  .scroll-thin {
+    -webkit-overflow-scrolling: touch;
   }
 }
 
 @layer utilities {
-  /* ---------- premium chat wallpaper ---------- */
   .chat-bg {
     background-color: #0b1120;
     background-image:
@@ -27,7 +53,6 @@
       radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.04), transparent 60%);
   }
 
-  /* ---------- glass panels ---------- */
   .glass {
     background: rgba(17, 26, 46, 0.72);
     backdrop-filter: blur(18px);
@@ -35,7 +60,6 @@
     border: 1px solid rgba(255, 255, 255, 0.06);
   }
 
-  /* ---------- scrollbars ---------- */
   .scroll-thin::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -53,5 +77,13 @@
   .scroll-thin {
     scrollbar-width: thin;
     scrollbar-color: rgba(148, 163, 184, 0.2) transparent;
+  }
+
+  /* mobile-only touch targets */
+  @media (max-width: 768px) {
+    .touch-target {
+      min-height: 44px;
+      min-width: 44px;
+    }
   }
 }

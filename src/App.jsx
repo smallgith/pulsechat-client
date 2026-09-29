@@ -72,31 +72,27 @@ export default function App() {
   useEffect(() => { callRef.current = call; }, [call]);
 
   /* ================= audio unlock ================= */
-  useEffect(() => {
+
+useEffect(() => {
+  import('./lib/notification').then(({ unlockAudio }) => {
     const unlock = async () => {
-      try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        if (ctx.state === 'suspended') await ctx.resume();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        gain.gain.value = 0.0001;
-        osc.connect(gain); gain.connect(ctx.destination);
-        osc.start(0); osc.stop(0.01);
-        setTimeout(() => ctx.close(), 100);
-      } catch {}
+      await unlockAudio();
       document.removeEventListener('click', unlock);
-      document.removeEventListener('keydown', unlock);
       document.removeEventListener('touchstart', unlock);
+      document.removeEventListener('keydown', unlock);
     };
+
     document.addEventListener('click', unlock, { once: true });
-    document.addEventListener('keydown', unlock, { once: true });
     document.addEventListener('touchstart', unlock, { once: true });
+    document.addEventListener('keydown', unlock, { once: true });
+
     return () => {
       document.removeEventListener('click', unlock);
-      document.removeEventListener('keydown', unlock);
       document.removeEventListener('touchstart', unlock);
+      document.removeEventListener('keydown', unlock);
     };
-  }, []);
+  });
+}, []);
 
   /* ================= toast helper ================= */
   const pushToast = useCallback((data) => {
@@ -607,7 +603,7 @@ export default function App() {
   }
 
   return (
-    <div className="h-full flex overflow-hidden">
+    <div className="h-full h-[100dvh] flex overflow-hidden">
       <div className={`${selected ? 'hidden md:flex' : 'flex'} w-full md:w-auto`}>
         <Sidebar
           me={me.name}
