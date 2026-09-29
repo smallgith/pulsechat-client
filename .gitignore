@@ -11,6 +11,7 @@ build/
 # env files
 # NOTE: .env.production JOVI JOIE
 .env
+.env.production
 .env.local
 .env.development
 .env.development.local
