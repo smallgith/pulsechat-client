@@ -43,7 +43,8 @@ export default function ChatWindow({
   onSend, onTyping, onBack,
   onVoiceCall, onVideoCall,
   onDeleteMessage, onReactMessage,
-  onAction,
+  onAction, onEditMessage, onForwardMessage, onForwardMany, onStarMessage,
+  preferences, connected,
 }) {
   const bottomRef = useRef(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -51,6 +52,8 @@ export default function ChatWindow({
   const [searchIdx, setSearchIdx] = useState(0);
   const [replyTo, setReplyTo] = useState(null);
   const [confirm, setConfirm] = useState(null);
+  const [selecting, setSelecting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -71,6 +74,10 @@ export default function ChatWindow({
       .getElementById(`msg-${id}`)
       ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
+
+  useEffect(() => {
+    if (filteredIds[searchIdx]) scrollToMessage(filteredIds[searchIdx]);
+  }, [searchIdx, searchQ]);
 
   const nextMatch = () => {
     if (!filteredIds.length) return;
@@ -100,7 +107,10 @@ export default function ChatWindow({
   return (
     <section className="flex-1 flex flex-col min-w-0 chat-bg h-full">
       <ChatHeader
+        me={me}
         user={user}
+        connected={connected}
+        preferences={preferences}
         typing={typing}
         muted={muted}
         favorite={favorite}
@@ -118,9 +128,15 @@ export default function ChatWindow({
             onBack?.();
             return;
           }
+          if (key === 'select') {
+            setSelecting(true);
+            return;
+          }
           onAction?.(key);
         }}
       />
+
+      {selecting && <div className="flex flex-wrap items-center gap-2 px-4 py-2 bg-ink-800 border-b border-white/10 text-xs"><span className="flex-1">{selectedIds.length} selected</span><button className="btn-secondary !text-xs" onClick={() => setSelectedIds(messages.filter((m) => !m.deleted).map((m) => m.id))}>Select all</button><button disabled={!selectedIds.length} className="btn-secondary !text-xs" onClick={() => { onForwardMany(messages.filter((m) => selectedIds.includes(m.id))); setSelecting(false); setSelectedIds([]); }}>Forward</button><button disabled={!selectedIds.length} className="btn-secondary !text-xs text-red-400" onClick={() => setConfirm({ many: true })}>Delete for me</button><button className="icon-btn" aria-label="Cancel selection" onClick={() => { setSelecting(false); setSelectedIds([]); }}><X size={16} /></button></div>}
 
       {searchOpen && (
         <div className="px-2 sm:px-5 py-2 glass-solid border-b border-white/10 flex items-center gap-2 animate-pop-in shrink-0">
@@ -159,6 +175,7 @@ export default function ChatWindow({
               setSearchOpen(false);
               setSearchQ('');
             }}
+            aria-label="Close message search"
             className="p-1.5 rounded-lg hover:bg-white/5 shrink-0"
           >
             <X className="w-4 h-4" />
@@ -187,12 +204,18 @@ export default function ChatWindow({
                         : ''
                     }
                   >
+                    {selecting && !m.deleted && <label className="flex items-center gap-2 text-[11px] text-slate-400 py-1 cursor-pointer"><input aria-label={`Select message ${m.text || 'attachment'}`} type="checkbox" checked={selectedIds.includes(m.id)} onChange={(e) => setSelectedIds((prev) => e.target.checked ? [...prev, m.id] : prev.filter((id) => id !== m.id))} />Select message</label>}
                     <MessageBubble
                       message={m}
                       mine={m.from === me}
                       onDelete={askDelete}
                       onReply={(msg) => setReplyTo(msg)}
                       onReact={(msg, emoji) => onReactMessage?.(msg, emoji)}
+                      showName={user.isGroup && m.from !== me}
+                      starred={preferences.starred.includes(m.id)}
+                      onStar={onStarMessage}
+                      onEdit={onEditMessage}
+                      onForward={onForwardMessage}
                     />
                   </div>
                 );
@@ -200,12 +223,18 @@ export default function ChatWindow({
             </div>
           ))}
 
-          {typing && <TypingIndicator name={user.name || user.phone} />}
+          {!messages.length && <p className="text-xs text-center text-slate-500 py-8">{user.phone === me ? 'Send yourself notes, links, files and voice reminders.' : 'Start the conversation. Send a message below.'}</p>}
+          {typing && <TypingIndicator name={typing} />}
           <div ref={bottomRef} />
         </div>
       </div>
 
+      {!connected && <p className="px-4 py-2 text-xs text-amber-300 bg-amber-500/10">Reconnecting… Your draft is saved on this device.</p>}
+      {preferences.blocked.includes(user.phone) && <p className="px-4 py-2 text-xs text-red-300 bg-red-500/10">This contact is blocked. Use the chat menu to unblock.</p>}
       <MessageInput
+        key={user.phone}
+        draftKey={`pulsechat.draft.${me}.${user.phone}`}
+        disabled={!connected || preferences.blocked.includes(user.phone)}
         onSend={onSend}
         onTyping={onTyping}
         replyTo={replyTo}
@@ -214,7 +243,7 @@ export default function ChatWindow({
 
       <ConfirmDialog
         open={!!confirm}
-        title={confirm?.forEveryone ? 'Delete for everyone?' : 'Delete for me?'}
+        title={confirm?.many ? `Delete ${selectedIds.length} messages for me?` : confirm?.forEveryone ? 'Delete for everyone?' : 'Delete for me?'}
         message={
           confirm?.forEveryone
             ? 'This message will be deleted for everyone in this chat.'
@@ -223,7 +252,10 @@ export default function ChatWindow({
         confirmLabel="Delete"
         danger
         onCancel={() => setConfirm(null)}
-        onConfirm={doDelete}
+        onConfirm={async () => {
+          if (confirm?.many) { for (const m of messages.filter((m) => selectedIds.includes(m.id))) await onDeleteMessage(m, false); setSelectedIds([]); setSelecting(false); setConfirm(null); }
+          else doDelete();
+        }}
       />
     </section>
   );

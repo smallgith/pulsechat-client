@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Check, CheckCheck, Download, FileText, X,
-  Trash2, Copy, Reply, Smile,
+  Trash2, Copy, Reply, Smile, MoreVertical, Star, Pencil, Forward,
 } from 'lucide-react';
 import { formatTime, formatBytes } from '../lib/format';
 
@@ -14,11 +14,18 @@ function Ticks({ status }) {
 const REACTIONS = ['❤️', '👍', '😂', '😮', '😢', '🙏'];
 
 export default function MessageBubble({
-  message, mine, onDelete, onReply, onReact, showName,
+  message, mine, onDelete, onReply, onReact, showName, onEdit, onForward, onStar, starred,
 }) {
   const [lightbox, setLightbox] = useState(false);
   const [reactOpen, setReactOpen] = useState(false);
   const [ctx, setCtx] = useState({ open: false, x: 0, y: 0 });
+  const [copyError, setCopyError] = useState('');
+  useEffect(() => {
+    if (!ctx.open) return;
+    const close = (e) => { if (e.key === 'Escape') setCtx({ open: false }); };
+    document.addEventListener('keydown', close);
+    return () => document.removeEventListener('keydown', close);
+  }, [ctx.open]);
 
   const file = message.file;
   const gif = message.gif;
@@ -28,7 +35,7 @@ export default function MessageBubble({
 
   const onContext = (e) => {
     e.preventDefault();
-    setCtx({ open: true, x: e.clientX, y: e.clientY });
+    setCtx({ open: true, x: Math.max(8, Math.min(e.clientX, window.innerWidth - 210)), y: Math.max(8, Math.min(e.clientY, window.innerHeight - 370)) });
   };
 
   const reactions = message.reactions || {};
@@ -50,7 +57,7 @@ export default function MessageBubble({
 
   return (
     <>
-      <div className={`flex mb-1.5 animate-fade-up ${mine ? 'justify-end' : 'justify-start'}`}>
+      <div className={`flex ${reactionEmojis.length ? 'mb-5' : 'mb-1.5'} animate-fade-up ${mine ? 'justify-end' : 'justify-start'}`}>
         <div
           onContextMenu={onContext}
           className={`group relative max-w-[78%] sm:max-w-[65%] lg:max-w-[55%] rounded-2xl px-1.5 pt-1.5 pb-1 shadow-lg transition
@@ -58,6 +65,7 @@ export default function MessageBubble({
               ? 'bg-gradient-to-br from-brand-600 to-emerald-700 rounded-br-md'
               : 'bg-ink-600/90 border border-white/5 rounded-bl-md'}`}
         >
+          <div className="flex items-center gap-3 px-2 pt-0.5 text-[10px]"><span className="flex-1 min-w-0 truncate text-brand-200">{showName ? message.fromName : ''}{message.forwarded && <i className="text-white/60">{showName ? ' · ' : ''}Forwarded</i>}</span><button aria-label="Message options" onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); onContext({ preventDefault() {}, clientX: r.left, clientY: r.bottom }); }} className="p-1 rounded hover:bg-black/20 text-white/60"><MoreVertical size={13} /></button></div>
           {/* reply preview */}
           {message.replyTo && (
             <div className={`mx-2 mt-1 mb-1 px-2.5 py-1.5 rounded-lg border-l-2 ${mine ? 'bg-black/20 border-white/60' : 'bg-black/30 border-brand-400'}`}>
@@ -125,8 +133,11 @@ export default function MessageBubble({
               </p>
             )}
             <div className={`flex items-center justify-end gap-1 mt-1 ${mine ? 'text-white/70' : 'text-slate-400'}`}>
+              {starred && <Star size={10} className="text-yellow-300 fill-yellow-300" />}
+              {message.editedAt && <span className="text-[9px]">edited</span>}
+              {message.expiresAt && <span className="text-[9px]" title={`Disappears ${new Date(message.expiresAt).toLocaleString()}`}>◷</span>}
               <span className="text-[10px] tabular-nums">{formatTime(message.time)}</span>
-              {mine && <Ticks status={message.status} />}
+              {mine && <span title={`${message.readBy?.filter((p) => p !== message.from).length || 0} read · ${message.deliveredTo?.filter((p) => p !== message.from).length || 0} delivered`}><Ticks status={message.status} /></span>}
             </div>
           </div>
 
@@ -181,13 +192,15 @@ export default function MessageBubble({
 
       {/* context menu */}
       {ctx.open && (
+        <>
+        <div className="fixed inset-0 z-[109]" onClick={() => setCtx({ open: false })} />
         <div
           className="fixed z-[110] py-1 glass rounded-xl shadow-2xl border border-white/10 animate-pop-in min-w-[180px]"
           style={{ left: ctx.x, top: ctx.y }}
           onMouseDown={(e) => e.stopPropagation()}
         >
           <button
-            onClick={() => { navigator.clipboard.writeText(message.text || ''); onReply?.(null, true); setCtx({ open: false }); }}
+            onClick={async () => { try { await navigator.clipboard.writeText(message.text || message.file?.url || message.voice?.url || message.gif?.url || ''); setCtx({ open: false }); } catch { setCopyError('Clipboard unavailable in this browser.'); } }}
             className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5"
           >
             <Copy className="w-4 h-4" /> Copy text
@@ -198,6 +211,10 @@ export default function MessageBubble({
           >
             <Reply className="w-4 h-4" /> Reply
           </button>
+          <button className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5" onClick={() => { onForward?.(message); setCtx({ open: false }); }}><Forward size={16} />Forward</button>
+          <button className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5" onClick={() => { onStar?.(message); setCtx({ open: false }); }}><Star size={16} />{starred ? 'Unstar message' : 'Star message'}</button>
+          {mine && message.text && <button className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5" onClick={() => { onEdit?.(message); setCtx({ open: false }); }}><Pencil size={16} />Edit message</button>}
+          {copyError && <p className="text-xs text-red-400 px-3 py-2">{copyError}</p>}
           <div className="h-px my-1 bg-white/10" />
           {mine && (
             <button
@@ -214,6 +231,7 @@ export default function MessageBubble({
             <Trash2 className="w-4 h-4" /> Delete for me
           </button>
         </div>
+        </>
       )}
 
       {/* lightbox */}

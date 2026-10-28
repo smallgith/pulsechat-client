@@ -133,8 +133,8 @@ export const showBrowserNotification = async ({
   tag,
   onClick,
   force = false,
+  chatUrl = '/',
 } = {}) => {
-  console.log('[notif] called', { title, body, force, permission: Notification?.permission });
 
   if (typeof Notification === 'undefined') {
     console.warn('[notif] Notification API not supported');
@@ -152,21 +152,20 @@ export const showBrowserNotification = async ({
 
   const opts = {
     body: body || '',
-    icon: icon || '/favicon.ico',
-    badge: '/favicon.ico',
+    icon: icon || '/icon.svg',
+    badge: '/icon.svg',
     tag: tag || 'pulsechat',
     renotify: true,
-    silent: true,
-    vibrate: [200, 100, 200],
-    data: { url: '/' },
+    silent: false,
+    data: { url: chatUrl },
   };
 
   try {
     // Prefer SW
     if ('serviceWorker' in navigator) {
       try {
-        const reg = await navigator.serviceWorker.ready;
-        if (reg?.showNotification) {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg?.active && reg.showNotification) {
           await reg.showNotification(title || 'PulseChat', opts);
           console.log('[notif] shown via SW');
           return true;

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Bell, X } from 'lucide-react';
 import { getPermission, requestPermission, unlockAudio, playSound } from '../lib/notification';
+import { enablePush } from '../lib/push';
 
 const DISMISS_KEY = 'pulsechat.notif.dismissed';
 
@@ -37,10 +38,9 @@ export default function NotificationPrompt() {
       console.warn('[audio] unlock failed', e);
     }
 
-    setBusy(false);
-
     if (permission === 'granted') {
-      setResult('✓ Notifications enabled! Testing sound…');
+      try { const background = await enablePush(); setResult(background ? 'Notifications enabled, including background alerts.' : 'Browser alerts enabled. Background push is not supported in this browser.'); }
+      catch (e) { setResult(`Live alerts enabled. ${e.message}`); }
       setTimeout(() => playSound(), 300);
       setTimeout(() => setHidden(true), 2000);
     } else if (permission === 'denied') {
@@ -48,6 +48,7 @@ export default function NotificationPrompt() {
     } else {
       setResult('Please allow notifications to continue.');
     }
+    setBusy(false);
   };
 
   const dismiss = () => {
@@ -78,6 +79,7 @@ export default function NotificationPrompt() {
 
       <button
         onClick={dismiss}
+        aria-label="Dismiss notification prompt"
         className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/5 transition shrink-0"
       >
         <X className="w-3.5 h-3.5" />

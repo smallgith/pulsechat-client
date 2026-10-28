@@ -36,3 +36,5 @@ dist.zip
 *.zip
 .cache/
 coverage/
+test-results/
+playwright-report/

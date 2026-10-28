@@ -1,69 +1,22 @@
-/* ============================================================
-   Service Worker — Mobile/Desktop notifications
-   ============================================================ */
-
-const CACHE_NAME = 'pulsechat-v2';
-
-self.addEventListener('install', (event) => {
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((names) =>
-      Promise.all(
-        names.filter((n) => n !== CACHE_NAME).map((n) => caches.delete(n))
-      )
-    )
-  );
-  self.clients.claim();
-});
-
-/* ---------- notification click ---------- */
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-
-  const urlToOpen = event.notification.data?.url || '/';
-
-  event.waitUntil(
-    self.clients
-      .matchAll({ type: 'window', includeUncontrolled: true })
-      .then((clientList) => {
-        for (const client of clientList) {
-          if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-            return client.focus();
-          }
-        }
-        if (self.clients.openWindow) {
-          return self.clients.openWindow(urlToOpen);
-        }
-      })
-  );
+  const target = new URL(event.notification.data?.url || '/', self.location.origin);
+  if (target.origin !== self.location.origin) return;
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const client = windows.find((w) => new URL(w.url).origin === self.location.origin);
+    if (client) { client.postMessage({ type: 'OPEN_CHAT', chat: target.searchParams.get('chat') }); return client.focus(); }
+    return self.clients.openWindow(target.href);
+  })());
 });
-
-/* ---------- push (future) ---------- */
 self.addEventListener('push', (event) => {
-  let data = { title: 'PulseChat', body: 'New message' };
-  try {
-    if (event.data) data = event.data.json();
-  } catch {}
-  event.waitUntil(
-    self.registration.showNotification(data.title || 'PulseChat', {
-      body: data.body || '',
-      icon: data.icon || '/favicon.ico',
-      badge: '/favicon.ico',
-      tag: data.tag || 'pulsechat',
-      data: { url: data.url || '/' },
-      vibrate: [200, 100, 200],
-      requireInteraction: false,
-    })
-  );
-});
-
-/* ---------- offline fallback ---------- */
-self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return;
-  // Don't intercept API
-  const url = new URL(event.request.url);
-  if (url.pathname.startsWith('/api') || url.pathname.startsWith('/socket.io')) return;
+  let data;
+  try { data = event.data?.json(); } catch { return; }
+  if (!data) return;
+  event.waitUntil(self.registration.showNotification(data.title || 'PulseChat', {
+    body: data.body || 'New message', icon: '/icon.svg', badge: '/icon.svg',
+    tag: data.tag || 'pulsechat', data: { url: data.url || '/' },
+  }));
 });

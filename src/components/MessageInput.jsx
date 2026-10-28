@@ -8,11 +8,17 @@ import { formatBytes } from '../lib/format';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
 import EmojiPicker from './EmojiPicker';
 import GifPicker from './GifPicker';
+import { isGiphyEnabled } from '../lib/giphy';
 
 export default function MessageInput({
   onSend, onTyping, disabled, replyTo, onCancelReply,
+  draftKey,
 }) {
-  const [text, setText] = useState('');
+  const [text, setText] = useState(() => { try { return localStorage.getItem(draftKey) || ''; } catch { return ''; } });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const sendingRef = useRef(false);
+  const batchId = useRef(null);
   const [files, setFiles] = useState([]);
   const [dragging, setDragging] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
@@ -24,8 +30,12 @@ export default function MessageInput({
   const typingTimer = useRef(null);
   const isTyping = useRef(false);
   const dragDepth = useRef(0);
+  const filesRef = useRef([]);
+  filesRef.current = files;
 
   const recorder = useVoiceRecorder();
+  useEffect(() => { try { if (text) localStorage.setItem(draftKey, text); else localStorage.removeItem(draftKey); } catch { /* Storage may be full. */ } }, [text, draftKey]);
+  useEffect(() => () => { clearTimeout(typingTimer.current); onTyping(false); filesRef.current.forEach((f) => f.preview && URL.revokeObjectURL(f.preview)); }, []);
 
   /* auto-resize */
   useEffect(() => {
@@ -36,6 +46,7 @@ export default function MessageInput({
   }, [text]);
 
   const handleChange = (e) => {
+    batchId.current = null;
     setText(e.target.value);
     if (!isTyping.current) {
       isTyping.current = true;
@@ -49,12 +60,13 @@ export default function MessageInput({
   };
 
   const addFiles = (list) => {
+    batchId.current = null;
     const arr = [...list];
     const accepted = arr
       .filter((f) => f.size <= 25 * 1024 * 1024)
       .slice(0, 10 - files.length);
     if (arr.length !== accepted.length) {
-      alert('Some files skipped (max 25MB, max 10 files)');
+      setError('Some files skipped (max 25MB, max 10 files)');
     }
     const items = accepted.map((f) => ({
       file: f,
@@ -67,6 +79,7 @@ export default function MessageInput({
   };
 
   const removeFile = (idx) => {
+    batchId.current = null;
     setFiles((prev) => {
       const item = prev[idx];
       if (item?.preview) URL.revokeObjectURL(item.preview);
@@ -119,8 +132,11 @@ export default function MessageInput({
   };
 
   const submit = async () => {
-    if (disabled) return;
+    if (disabled || sendingRef.current) return;
     if (!text.trim() && files.length === 0) return;
+    sendingRef.current = true; setBusy(true); setError('');
+    batchId.current ||= crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+    try {
 
     let metas = [];
     if (files.length > 0) {
@@ -138,13 +154,13 @@ export default function MessageInput({
           }))
         );
         metas = await Promise.all(uploads);
-      } catch {
-        alert('Upload failed. Try again.');
-        return;
+      } catch (e) {
+        throw new Error(e.message || 'Upload failed. Try again.');
       }
     }
 
-    onSend({
+    await onSend({
+      clientId: batchId.current,
       text: text.trim(),
       file: metas[0] || null,
       files: metas,
@@ -161,6 +177,7 @@ export default function MessageInput({
 
     files.forEach((f) => f.preview && URL.revokeObjectURL(f.preview));
     setText('');
+    batchId.current = null;
     setFiles([]);
     setShowEmoji(false);
     setShowGif(false);
@@ -169,22 +186,27 @@ export default function MessageInput({
     isTyping.current = false;
     onTyping(false);
     taRef.current?.focus();
+    } catch (e) { setError(e.message || 'Message could not be sent. Your draft is saved.'); }
+    finally { sendingRef.current = false; setBusy(false); }
   };
 
   const onKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       submit();
     }
   };
 
   const addEmoji = (emoji) => {
+    batchId.current = null;
     setText((t) => t + emoji);
     taRef.current?.focus();
   };
 
-  const pickGif = (gif) => {
-    onSend({
+  const pickGif = async (gif) => {
+    if (disabled || sendingRef.current) return;
+    try {
+    await onSend({
       text: '',
       file: null,
       gif: { url: gif.url, preview: gif.preview },
@@ -198,24 +220,28 @@ export default function MessageInput({
     });
     setShowGif(false);
     onCancelReply?.();
+    } catch (e) { setError(e.message); }
   };
 
   const startRecording = async () => {
     const ok = await recorder.start();
-    if (!ok) alert('Microphone permission denied');
+    if (!ok) setError('Microphone unavailable. Allow microphone access and use HTTPS or localhost.');
   };
 
   const stopAndSend = async () => {
+    if (sendingRef.current) return;
+    sendingRef.current = true; setBusy(true); setError('');
     const res = await recorder.stop();
-    if (!res) return;
+    if (!res) { sendingRef.current = false; setBusy(false); return; }
     try {
-      const meta = await uploadFile(res.blob, () => {});
-      onSend({
+      const meta = await uploadFile(new File([res.blob], `voice-${Date.now()}.${res.blob.type.includes('mp4') ? 'm4a' : res.blob.type.includes('ogg') ? 'ogg' : 'webm'}`, { type: res.blob.type }), () => {});
+      await onSend({
         text: '',
         file: null,
         voice: {
           url: meta.url,
-          duration: recorder.seconds || 1,
+          duration: res.duration || 1,
+          mime: meta.mime,
           size: meta.size,
         },
         replyTo: replyTo
@@ -226,14 +252,12 @@ export default function MessageInput({
             }
           : null,
       });
-      URL.revokeObjectURL(res.url);
       onCancelReply?.();
-    } catch {
-      alert('Voice upload failed');
-    }
+    } catch (e) { setError(e.message || 'Voice upload failed'); }
+    finally { URL.revokeObjectURL(res.url); sendingRef.current = false; setBusy(false); }
   };
 
-  const uploading = files.some((f) => f.progress > 0 && f.progress < 100);
+  const uploading = busy;
   const hasContent = text.trim() || files.length > 0;
   const fmt = (s) =>
     `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60)
@@ -241,13 +265,15 @@ export default function MessageInput({
       .padStart(2, '0')}`;
 
   return (
-    <div
+    <fieldset disabled={disabled || busy}
       onDragEnter={onDragEnter}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
-      className="relative border-t border-white/10 bg-ink-800/95 backdrop-blur-xl shrink-0 safe-bottom"
+      className="relative min-w-0 border-t border-white/10 bg-ink-800/95 backdrop-blur-xl shrink-0 safe-bottom"
     >
+      {error && <p role="alert" className="px-4 pt-2 text-xs text-red-400">{error}</p>}
+      {busy && <p className="px-4 pt-2 text-xs text-brand-400">Sending…</p>}
       {dragging && (
         <div className="absolute inset-0 z-40 bg-brand-500/15 border-2 border-dashed border-brand-500/60 rounded-lg flex flex-col items-center justify-center pointer-events-none">
           <ImageIcon className="w-10 h-10 text-brand-400 mb-2" />
@@ -348,6 +374,7 @@ export default function MessageInput({
         <div className="px-2 sm:px-3 py-2 sm:py-3 flex items-center gap-2 sm:gap-3">
           <button
             onClick={recorder.cancel}
+            aria-label="Cancel recording"
             className="p-2.5 rounded-full text-red-400 hover:bg-red-500/10 active:bg-red-500/20 transition"
           >
             <Trash2 className="w-5 h-5" />
@@ -363,6 +390,7 @@ export default function MessageInput({
 
           <button
             onClick={stopAndSend}
+            aria-label="Send voice message"
             className="p-3 rounded-full bg-gradient-to-br from-brand-500 to-emerald-600 shadow-lg shadow-brand-500/25 hover:brightness-110 active:scale-95 transition"
           >
             <Send className="w-5 h-5" />
@@ -413,6 +441,7 @@ export default function MessageInput({
             <textarea
               ref={taRef}
               rows={1}
+              maxLength={4000}
               value={text}
               onChange={handleChange}
               onKeyDown={onKeyDown}
@@ -420,6 +449,8 @@ export default function MessageInput({
               placeholder="Message"
               className="flex-1 resize-none bg-transparent py-2 px-1 text-[15px] placeholder-slate-500 outline-none scroll-thin max-h-[120px] min-w-0"
             />
+
+            {isGiphyEnabled() && <button type="button" className="p-2 text-xs font-semibold text-slate-400 rounded-full hover:bg-white/5" aria-label="GIF picker" onClick={() => { setShowGif(!showGif); setShowEmoji(false); }}>GIF</button>}
 
             <button
               onClick={() => fileRef.current?.click()}
@@ -467,6 +498,6 @@ export default function MessageInput({
           )}
         </div>
       )}
-    </div>
+    </fieldset>
   );
 }

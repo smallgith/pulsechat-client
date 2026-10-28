@@ -13,6 +13,8 @@ export default function Login({ onJoin, error }) {
   const [busy, setBusy] = useState(false);
   const [localErr, setLocalErr] = useState('');
   const [resendIn, setResendIn] = useState(0);
+  const [demoAuth, setDemoAuth] = useState(false);
+  const [token, setToken] = useState('');
 
   const otpRefs = useRef([]);
   const timerRef = useRef(null);
@@ -49,6 +51,7 @@ export default function Login({ onJoin, error }) {
       });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || 'Failed to send OTP');
+      setDemoAuth(!!data.demoAuth);
       setStep('otp');
       setOtp(['', '', '', '', '', '']);
       setTimeout(() => otpRefs.current[0]?.focus(), 100);
@@ -65,12 +68,16 @@ export default function Login({ onJoin, error }) {
     setBusy(true);
     setLocalErr('');
     try {
-      await fetch(`${SOCKET_URL}/api/send-otp`, {
+      const res = await fetch(`${SOCKET_URL}/api/send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone }),
       });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Could not resend code');
       startResendTimer();
+    } catch (err) {
+      setLocalErr(err.message);
     } finally {
       setBusy(false);
     }
@@ -122,6 +129,8 @@ export default function Login({ onJoin, error }) {
       });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || 'Invalid OTP');
+      setToken(data.token);
+      if (!data.user?.name?.startsWith('User ')) setName(data.user?.name || '');
       setStep('name');
     } catch (err) {
       setLocalErr(err.message);
@@ -138,7 +147,7 @@ export default function Login({ onJoin, error }) {
       setLocalErr('Name must be at least 2 characters');
       return;
     }
-    onJoin({ phone, name: n });
+    onJoin({ phone, name: n, token });
   };
 
   const stepIndex = ['phone', 'otp', 'name'].indexOf(step);
@@ -271,7 +280,7 @@ export default function Login({ onJoin, error }) {
 
               <div className="mt-3 flex items-center justify-between text-xs gap-2">
                 <span className="text-slate-500 truncate">
-                  💡 OTP: <span className="text-brand-400 font-mono font-semibold">111111</span>
+                  {demoAuth ? <>Demo login · Code: <span className="text-brand-400 font-mono font-semibold">111111</span></> : 'Check your SMS for the code'}
                 </span>
                 <button
                   type="button"

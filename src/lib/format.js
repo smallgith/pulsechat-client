@@ -33,6 +33,9 @@ export const groupByDay = (messages = []) => {
 
 export const shortPreview = (msg) => {
   if (!msg) return '';
+  if (msg.deleted) return 'This message was deleted';
+  if (msg.voice) return '🎤 Voice message';
+  if (msg.gif) return '🎬 GIF';
   if (msg.file) {
     const isImg = msg.file.mime?.startsWith('image/');
     return `${isImg ? '📷' : '📎'} ${msg.text || msg.file.name}`;

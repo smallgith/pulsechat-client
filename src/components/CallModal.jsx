@@ -1,389 +1,87 @@
-import { useEffect, useRef, useState } from 'react';
-import {
-  Mic, MicOff, Video as VideoIcon, VideoOff, PhoneOff,
-  Phone, Volume2, VolumeX, Maximize2, Minimize2, Loader2, Camera,
-} from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Mic, MicOff, Video, VideoOff, PhoneOff, Phone, Headphones, Maximize2, Minimize2, Volume2 } from 'lucide-react';
 import Avatar from './Avatar';
 
-/* ==================== RINGTONE HOOK ==================== */
 function useRingtone(active) {
   useEffect(() => {
     if (!active) return;
-
-    let audio = null;
-    let intervalId = null;
-    let synthCtx = null;
-
-    const start = async () => {
-      // Try mp3 file first
-      try {
-        audio = new Audio('/voice-call-rington.mp3');
-        audio.loop = true;
-        audio.volume = 1;
-        await audio.play();
-        console.log('[ringtone] playing mp3');
-        return;
-      } catch (e) {
-        console.warn('[ringtone] mp3 failed, using synth', e.message);
-      }
-
-      // Fallback: synthesized ringtone
-      try {
-        synthCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const beep = () => {
-          if (!synthCtx || synthCtx.state === 'closed') return;
-          const now = synthCtx.currentTime;
-          [0, 0.4].forEach((offset, i) => {
-            const osc = synthCtx.createOscillator();
-            const gain = synthCtx.createGain();
-            osc.type = 'sine';
-            osc.frequency.value = i === 0 ? 850 : 1050;
-            gain.gain.setValueAtTime(0, now + offset);
-            gain.gain.linearRampToValueAtTime(0.3, now + offset + 0.02);
-            gain.gain.linearRampToValueAtTime(0, now + offset + 0.3);
-            osc.connect(gain);
-            gain.connect(synthCtx.destination);
-            osc.start(now + offset);
-            osc.stop(now + offset + 0.35);
-          });
-        };
-        beep();
-        intervalId = setInterval(beep, 2000);
-      } catch {}
-    };
-
-    start();
-
-    return () => {
-      if (audio) {
-        audio.pause();
-        audio.currentTime = 0;
-        audio.src = '';
-        audio = null;
-      }
-      if (intervalId) clearInterval(intervalId);
-      if (synthCtx) {
-        try { synthCtx.close(); } catch {}
-      }
-    };
+    const audio = new Audio('/voice-call-rington.mp3'); audio.loop = true; audio.volume = 0.65;
+    audio.play().catch(() => {});
+    return () => { audio.pause(); audio.src = ''; };
   }, [active]);
 }
 
-export default function CallModal({
-  call, localStream, remoteStream,
-  onEnd, onAccept, onReject, isIncoming,
-}) {
-  const [micOn, setMicOn] = useState(true);
-  const [camOn, setCamOn] = useState(true);          // camera on by default
-  const [speakerOn, setSpeakerOn] = useState(false); // 🔥 DEFAULT OFF
-  const [minimized, setMinimized] = useState(false);
-  const [remoteReady, setRemoteReady] = useState(false);
-
-  const localVideoRef = useRef(null);
-  const remoteVideoRef = useRef(null);
-  const remoteAudioRef = useRef(null);
-
-  /* ========== RINGTONE — incoming call ========== */
+export default function CallModal({ call, localStream, remoteStream, onEnd, onAccept, onReject, isIncoming }) {
+  const [micOn, setMicOn] = useState(true), [camOn, setCamOn] = useState(true), [minimized, setMinimized] = useState(false);
+  const [outputs, setOutputs] = useState([]), [output, setOutput] = useState(''), [outputOpen, setOutputOpen] = useState(false);
+  const [outputError, setOutputError] = useState(''), [playBlocked, setPlayBlocked] = useState(false), [elapsed, setElapsed] = useState(0);
+  const audioRef = useRef(null), remoteVideoRef = useRef(null), localVideoRef = useRef(null), didSetDefault = useRef(false);
+  const canRoute = typeof HTMLMediaElement !== 'undefined' && typeof HTMLMediaElement.prototype.setSinkId === 'function';
   useRingtone(isIncoming);
-
-  /* ========== ATTACH LOCAL STREAM ========== */
+  // Exactly one audio sink stays mounted, including while the call is minimized.
   useEffect(() => {
-    const el = localVideoRef.current;
-    if (!el || !localStream) return;
-    if (el.srcObject === localStream) return;
-    el.srcObject = localStream;
-    el.play().catch((e) => console.warn('local play:', e));
-  }, [localStream, camOn, minimized]);
-
-  /* ========== ATTACH REMOTE STREAM ========== */
-  useEffect(() => {
-    if (!remoteStream) {
-      setRemoteReady(false);
-      return;
-    }
-
-    const attach = async () => {
-      const v = remoteVideoRef.current;
-      const a = remoteAudioRef.current;
-
-      if (v && v.srcObject !== remoteStream) {
-        v.srcObject = remoteStream;
-        try {
-          await v.play();
-          setRemoteReady(true);
-          console.log('[remote video] playing ✓');
-        } catch (e) {
-          console.warn('[remote video] play fail:', e);
-          // retry after user gesture
-          setTimeout(() => {
-            v.play().then(() => setRemoteReady(true)).catch(() => {});
-          }, 300);
-        }
-      }
-
-      if (a && a.srcObject !== remoteStream) {
-        a.srcObject = remoteStream;
-        try {
-          await a.play();
-        } catch (e) {
-          console.warn('[remote audio] play fail:', e);
-          setTimeout(() => a.play().catch(() => {}), 300);
-        }
-      }
-    };
-
-    attach();
-
-    const onAddTrack = () => attach();
-    remoteStream.addEventListener('addtrack', onAddTrack);
-    return () => remoteStream.removeEventListener('addtrack', onAddTrack);
-  }, [remoteStream, minimized]);
-
-  /* ========== TOGGLES ========== */
-  const toggleMic = () => {
-    setMicOn((v) => {
-      localStream?.getAudioTracks().forEach((t) => (t.enabled = !v));
-      return !v;
-    });
-  };
-
-  const toggleCam = () => {
-    setCamOn((v) => {
-      localStream?.getVideoTracks().forEach((t) => (t.enabled = !v));
-      return !v;
-    });
-  };
-
-  const toggleSpeaker = () => {
-    setSpeakerOn((prev) => {
-      const next = !prev;
-      // Speaker ON = max volume; OFF = medium (earpiece-like)
-      const vol = next ? 1 : 0.5;
-      if (remoteAudioRef.current) remoteAudioRef.current.volume = vol;
-      if (remoteVideoRef.current) remoteVideoRef.current.volume = vol;
-      return next;
-    });
-  };
-
-  /* ========== SET INITIAL VOLUME (speaker OFF = 0.5) ========== */
-  useEffect(() => {
-    if (remoteAudioRef.current) remoteAudioRef.current.volume = 0.5;
-    if (remoteVideoRef.current) remoteVideoRef.current.volume = 0.5;
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.srcObject = remoteStream || null;
+    if (remoteStream) audio.play().then(() => setPlayBlocked(false)).catch(() => setPlayBlocked(true));
   }, [remoteStream]);
-
-  if (!call) return null;
-
-  const isVideo = call.type === 'video';
-  const isRinging = call.state === 'calling';
-  const isConnected = call.state === 'connected';
-
-  /* ==================== INCOMING SCREEN ==================== */
-  if (isIncoming) {
-    return (
-      <div className="fixed inset-0 z-[130] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-pop-in safe-top safe-bottom">
-        <div className="w-full max-w-sm glass-solid rounded-3xl shadow-2xl border border-white/10 p-6 sm:p-8 text-center">
-          <div className="flex justify-center mb-5">
-            <div className="relative">
-              <div className="absolute inset-0 rounded-full bg-brand-500/30 animate-ping" />
-              <Avatar name={call.peerName} size={96} ring />
-            </div>
-          </div>
-
-          <h3 className="text-xl font-semibold mb-1 truncate">{call.peerName}</h3>
-          <p className="text-sm text-slate-400 mb-8">
-            Incoming {isVideo ? 'video' : 'voice'} call…
-          </p>
-
-          <div className="flex justify-center gap-6">
-            <button
-              onClick={onReject}
-              className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center shadow-lg shadow-red-500/30 transition active:scale-95"
-            >
-              <PhoneOff className="w-7 h-7 text-white" />
-            </button>
-            <button
-              onClick={onAccept}
-              className="w-16 h-16 rounded-full bg-brand-500 hover:bg-brand-600 flex items-center justify-center shadow-lg shadow-brand-500/30 transition active:scale-95 animate-pulse"
-            >
-              <Phone className="w-7 h-7 text-white" />
-            </button>
-          </div>
-        </div>
+  useEffect(() => {
+    const video = remoteVideoRef.current;
+    if (video) { video.srcObject = remoteStream || null; if (remoteStream) video.play().catch(() => {}); }
+    const local = localVideoRef.current;
+    if (local) { local.srcObject = localStream || null; if (localStream) local.play().catch(() => {}); }
+  }, [remoteStream, localStream, minimized, isIncoming]);
+  useEffect(() => {
+    if (!call.connectedAt) return;
+    const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - call.connectedAt) / 1000)));
+    tick(); const timer = setInterval(tick, 1000); return () => clearInterval(timer);
+  }, [call.connectedAt]);
+  const route = useCallback(async (id) => {
+    if (!audioRef.current?.setSinkId) return;
+    try { await audioRef.current.setSinkId(id); setOutput(id); setOutputError(''); }
+    catch { setOutputError('This output could not be selected. Check browser permissions or device audio settings.'); }
+  }, []);
+  useEffect(() => {
+    let alive = true;
+    const refresh = async () => {
+      try {
+        const list = (await navigator.mediaDevices?.enumerateDevices() || []).filter((d) => d.kind === 'audiooutput');
+        if (!alive) return;
+        setOutputs(list);
+        if (!didSetDefault.current && localStream && canRoute) {
+          didSetDefault.current = true;
+          // Prefer an actual communications/headset device. Never emulate routing with volume.
+          const preferred = list.find((d) => d.deviceId === 'communications') || list.find((d) => /earpiece|headset|headphone|earphone|airpods|bluetooth/i.test(d.label));
+          await route(preferred?.deviceId || '');
+        }
+      } catch { /* System routing remains available. */ }
+    };
+    refresh(); navigator.mediaDevices?.addEventListener('devicechange', refresh);
+    return () => { alive = false; navigator.mediaDevices?.removeEventListener('devicechange', refresh); };
+  }, [localStream, canRoute, route]);
+  const chooseOutput = async () => {
+    setOutputOpen(!outputOpen);
+    if (navigator.mediaDevices?.selectAudioOutput && canRoute) {
+      try { const device = await navigator.mediaDevices.selectAudioOutput(); await route(device.deviceId); setOutputs((p) => [...p.filter((d) => d.deviceId !== device.deviceId), device]); }
+      catch (e) { if (e.name !== 'NotAllowedError') setOutputError('Use your device audio controls to choose the output.'); }
+    }
+  };
+  const duration = `${Math.floor(elapsed / 60).toString().padStart(2, '0')}:${(elapsed % 60).toString().padStart(2, '0')}`;
+  const label = isIncoming ? `Incoming ${call.type === 'video' ? 'video' : 'voice'} call` : call.state === 'connected' ? duration : call.state === 'calling' ? 'Ringing…' : call.state === 'preparing' ? 'Starting microphone…' : 'Connecting…';
+  const toggleMic = () => { localStream?.getAudioTracks().forEach((t) => { t.enabled = !micOn; }); setMicOn(!micOn); };
+  const toggleCam = () => { localStream?.getVideoTracks().forEach((t) => { t.enabled = !camOn; }); setCamOn(!camOn); };
+  return <>
+    <audio ref={audioRef} autoPlay playsInline />
+    {minimized ? <div className="fixed top-4 right-4 z-[130] glass-solid rounded-2xl shadow-2xl p-3 flex items-center gap-3 max-w-[calc(100vw-2rem)]"><Avatar name={call.peerName} size={40} /><div className="min-w-0"><p className="text-sm font-semibold truncate">{call.peerName}</p><p className="text-xs text-brand-400">{label}</p></div><button className="icon-btn" aria-label="Restore call" onClick={() => setMinimized(false)}><Maximize2 size={18} /></button><button className="icon-btn text-red-400" aria-label="End call" onClick={onEnd}><PhoneOff size={20} /></button></div> : <div role="dialog" aria-modal="true" aria-label={`${call.type === 'video' ? 'Video' : 'Voice'} call`} className="fixed inset-0 z-[130] bg-gradient-to-br from-ink-900 via-ink-800 to-black flex flex-col safe-top safe-bottom">
+      <header className="flex items-center gap-3 p-4"><div className="flex-1 min-w-0"><h3 className="font-semibold truncate">{call.peerName}</h3><p className="text-xs text-brand-400">{label}</p></div>{!isIncoming && <button className="icon-btn" aria-label="Minimize call" onClick={() => setMinimized(true)}><Minimize2 size={20} /></button>}</header>
+      <div className="flex-1 relative mx-3 rounded-3xl overflow-hidden bg-black/40 min-h-0">
+        {call.type === 'video' && !isIncoming && <video ref={remoteVideoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-contain" />}
+        {(!remoteStream?.getVideoTracks().length || isIncoming) && <div className="absolute inset-0 flex flex-col items-center justify-center gap-5"><Avatar name={call.peerName} size={120} ring /><p className="text-xl font-medium">{call.peerName}</p><p className="text-sm text-slate-400">{label}</p></div>}
+        {call.type === 'video' && !isIncoming && <div className="absolute top-3 right-3 w-28 h-40 sm:w-40 sm:h-52 rounded-2xl overflow-hidden border border-white/20 bg-ink-900"><video ref={localVideoRef} autoPlay muted playsInline className={`w-full h-full object-cover -scale-x-100 ${camOn ? '' : 'invisible'}`} />{!camOn && <span className="absolute inset-0 flex items-center justify-center text-xs text-slate-400">Camera off</span>}</div>}
       </div>
-    );
-  }
-
-  /* ==================== MINIMIZED ==================== */
-  if (minimized) {
-    return (
-      <div className="fixed top-4 right-4 z-[130] glass-solid rounded-2xl shadow-2xl border border-white/10 p-3 flex items-center gap-3 animate-pop-in max-w-[calc(100vw-2rem)]">
-        <Avatar name={call.peerName} size={40} />
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold truncate">{call.peerName}</p>
-          <p className="text-[11px] text-brand-400">
-            {isConnected ? 'Connected' : 'Ringing…'}
-          </p>
-        </div>
-        <button
-          onClick={() => setMinimized(false)}
-          className="p-2 rounded-lg bg-white/5 hover:bg-white/10"
-        >
-          <Maximize2 className="w-4 h-4" />
-        </button>
-        <button
-          onClick={onEnd}
-          className="p-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30"
-        >
-          <PhoneOff className="w-4 h-4" />
-        </button>
-      </div>
-    );
-  }
-
-  /* ==================== FULL SCREEN ==================== */
-  return (
-    <div className="fixed inset-0 z-[130] bg-gradient-to-br from-ink-900 via-ink-800 to-black flex flex-col animate-pop-in safe-top safe-bottom">
-      {/* Hidden audio for voice-only calls */}
-      <audio ref={remoteAudioRef} autoPlay playsInline />
-
-      {/* TOP BAR */}
-      <div className="flex items-center gap-3 p-3 sm:p-4 shrink-0">
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-base sm:text-lg truncate">
-            {call.peerName}
-          </p>
-          <p className="text-[11px] sm:text-xs text-slate-400 truncate">
-            {isConnected ? 'Connected' : 'Ringing…'}
-          </p>
-        </div>
-        <button
-          onClick={() => setMinimized(true)}
-          className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 transition shrink-0"
-        >
-          <Minimize2 className="w-5 h-5" />
-        </button>
-      </div>
-
-      {/* VIDEO AREA */}
-      <div className="flex-1 relative mx-2 sm:mx-4 rounded-2xl sm:rounded-3xl overflow-hidden bg-black min-h-0">
-        {/* Remote video — ALWAYS RENDERED, hidden if audio call */}
-        <video
-          ref={remoteVideoRef}
-          autoPlay
-          playsInline
-          className="absolute inset-0 w-full h-full object-cover"
-          style={{
-            display: isVideo && remoteReady ? 'block' : 'none',
-          }}
-        />
-
-        {/* Placeholder overlay */}
-        {(!isVideo || !remoteReady) && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-4">
-            <div className="relative">
-              <div className="absolute inset-0 rounded-full bg-brand-500/20 animate-ping" />
-              <Avatar name={call.peerName} size={120} ring />
-            </div>
-            <p className="text-base sm:text-lg font-medium text-center truncate max-w-full px-4">
-              {call.peerName}
-            </p>
-            <p className="text-xs sm:text-sm text-slate-400 text-center flex items-center gap-2">
-              {isRinging ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Calling…
-                </>
-              ) : isVideo && !remoteReady ? (
-                'Connecting video…'
-              ) : (
-                '🔊 On call'
-              )}
-            </p>
-          </div>
-        )}
-
-        {/* Local PiP — ALWAYS RENDERED */}
-        {isVideo && (
-          <div
-            className="absolute top-2 right-2 sm:top-4 sm:right-4 w-24 h-32 sm:w-32 sm:h-44 md:w-44 md:h-60 rounded-xl sm:rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl bg-black z-10"
-            style={{ display: camOn && localStream ? 'block' : 'none' }}
-          >
-            <video
-              ref={localVideoRef}
-              autoPlay
-              muted
-              playsInline
-              className="w-full h-full object-cover"
-              style={{ transform: 'scaleX(-1)' }}
-            />
-          </div>
-        )}
-
-        {/* Camera off indicator */}
-        {isVideo && !camOn && (
-          <div className="absolute top-2 right-2 sm:top-4 sm:right-4 w-24 h-32 sm:w-32 sm:h-44 md:w-44 md:h-60 rounded-xl sm:rounded-2xl bg-ink-900 border-2 border-white/10 flex flex-col items-center justify-center gap-2 z-10">
-            <Camera className="w-6 h-6 text-slate-500" />
-            <span className="text-[10px] text-slate-500">Camera off</span>
-          </div>
-        )}
-      </div>
-
-      {/* CONTROLS */}
-      <div className="flex items-center justify-center gap-2 sm:gap-4 p-3 sm:p-6 shrink-0">
-        <button
-          onClick={toggleMic}
-          className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition active:scale-95 ${
-            micOn
-              ? 'bg-white/10 hover:bg-white/20'
-              : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-          }`}
-        >
-          {micOn ? (
-            <Mic className="w-5 h-5 sm:w-6 sm:h-6" />
-          ) : (
-            <MicOff className="w-5 h-5 sm:w-6 sm:h-6" />
-          )}
-        </button>
-
-        {isVideo && (
-          <button
-            onClick={toggleCam}
-            className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition active:scale-95 ${
-              camOn
-                ? 'bg-white/10 hover:bg-white/20'
-                : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-            }`}
-          >
-            {camOn ? (
-              <VideoIcon className="w-5 h-5 sm:w-6 sm:h-6" />
-            ) : (
-              <VideoOff className="w-5 h-5 sm:w-6 sm:h-6" />
-            )}
-          </button>
-        )}
-
-        <button
-          onClick={onEnd}
-          className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center shadow-2xl shadow-red-500/40 transition active:scale-95"
-        >
-          <PhoneOff className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
-        </button>
-
-        <button
-          onClick={toggleSpeaker}
-          className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition active:scale-95 ${
-            speakerOn
-              ? 'bg-brand-500/30 text-brand-400'
-              : 'bg-white/10 hover:bg-white/20'
-          }`}
-          title={speakerOn ? 'Speaker ON' : 'Speaker OFF'}
-        >
-          {speakerOn ? (
-            <Volume2 className="w-5 h-5 sm:w-6 sm:h-6" />
-          ) : (
-            <VolumeX className="w-5 h-5 sm:w-6 sm:h-6" />
-          )}
-        </button>
-      </div>
-    </div>
-  );
+      {playBlocked && <button className="btn-primary mx-auto mt-3" onClick={() => audioRef.current?.play().then(() => setPlayBlocked(false)).catch(() => {})}>Tap to hear call audio</button>}
+      {!isIncoming && outputOpen && <div className="mx-auto mt-3 p-3 rounded-xl glass-solid w-[min(92vw,420px)] space-y-2">{canRoute && outputs.length ? <label className="field-label">Audio output<select className="field" value={output} onChange={(e) => route(e.target.value)}><option value="">System default</option>{outputs.filter((d) => d.deviceId !== 'default').map((d, i) => <option key={d.deviceId} value={d.deviceId}>{d.label || `Output ${i + 1}`}</option>)}</select></label> : <p className="text-xs text-slate-300">This browser uses your device's audio route. Choose earpiece, Bluetooth or speaker using your device audio controls.</p>}{outputError && <p className="text-xs text-amber-300">{outputError}</p>}</div>}
+      <div className="flex items-center justify-center gap-3 sm:gap-5 p-5 shrink-0">{isIncoming ? <><button aria-label="Decline call" className="call-control bg-red-500" onClick={onReject}><PhoneOff /></button><button aria-label="Accept call" className="call-control bg-brand-500" onClick={onAccept}><Phone /></button></> : <><button aria-label={micOn ? 'Mute microphone' : 'Unmute microphone'} aria-pressed={!micOn} disabled={!localStream} className={`call-control ${micOn ? 'bg-white/10' : 'bg-red-500/30 text-red-300'}`} onClick={toggleMic}>{micOn ? <Mic /> : <MicOff />}</button>{call.type === 'video' && <button aria-label={camOn ? 'Turn camera off' : 'Turn camera on'} aria-pressed={camOn} disabled={!localStream} className="call-control bg-white/10" onClick={toggleCam}>{camOn ? <Video /> : <VideoOff />}</button>}<button aria-label="End call" className="call-control bg-red-500 hover:bg-red-600" onClick={onEnd}><PhoneOff /></button><button aria-label="Audio output" title="Audio output" className={`call-control ${outputOpen ? 'bg-brand-500/30' : 'bg-white/10'}`} onClick={chooseOutput}>{outputs.find((d) => d.deviceId === output)?.label?.match(/speaker/i) ? <Volume2 /> : <Headphones />}</button></>}</div>
+    </div>}
+  </>;
 }

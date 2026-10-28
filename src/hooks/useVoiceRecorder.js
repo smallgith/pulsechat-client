@@ -1,62 +1,40 @@
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 
 export function useVoiceRecorder() {
-  const [recording, setRecording] = useState(false);
-  const [seconds, setSeconds] = useState(0);
-  const mediaRec = useRef(null);
-  const chunks = useRef([]);
-  const timerRef = useRef(null);
-  const streamRef = useRef(null);
-
+  const [recording, setRecording] = useState(false), [seconds, setSeconds] = useState(0);
+  const mediaRec = useRef(null), chunks = useRef([]), timer = useRef(), stream = useRef(), started = useRef(0), mounted = useRef(true);
+  const cleanup = () => { clearInterval(timer.current); stream.current?.getTracks().forEach((t) => t.stop()); stream.current = null; };
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; if (mediaRec.current?.state === 'recording') { mediaRec.current.onstop = null; mediaRec.current.stop(); } cleanup(); }; }, []);
   const start = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      chunks.current = [];
-      const mr = new MediaRecorder(stream);
-      mediaRec.current = mr;
-
-      mr.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.current.push(e.data);
-      };
-
-      mr.start();
-      setRecording(true);
-      setSeconds(0);
-      timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
+      if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) return false;
+      const local = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      if (!mounted.current) { local.getTracks().forEach((t) => t.stop()); return false; }
+      stream.current = local; chunks.current = [];
+      const mimeType = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus'].find((m) => MediaRecorder.isTypeSupported(m));
+      const mr = new MediaRecorder(local, mimeType ? { mimeType } : {}); mediaRec.current = mr;
+      mr.ondataavailable = (e) => { if (e.data.size) chunks.current.push(e.data); };
+      mr.start(); started.current = Date.now(); setRecording(true); setSeconds(0);
+      timer.current = setInterval(() => setSeconds(Math.floor((Date.now() - started.current) / 1000)), 1000);
       return true;
-    } catch {
-      return false;
-    }
+    } catch { cleanup(); return false; }
   }, []);
-
-  const stop = useCallback(() => {
-    return new Promise((resolve) => {
-      const mr = mediaRec.current;
-      if (!mr) return resolve(null);
-
-      mr.onstop = () => {
-        const blob = new Blob(chunks.current, { type: 'audio/webm' });
-        const url = URL.createObjectURL(blob);
-        streamRef.current?.getTracks().forEach((t) => t.stop());
-        clearInterval(timerRef.current);
-        setRecording(false);
-        setSeconds(0);
-        resolve({ blob, url });
-      };
-      mr.stop();
-    });
-  }, []);
-
+  const stop = useCallback(() => new Promise((resolve) => {
+    const mr = mediaRec.current;
+    if (!mr || mr.state !== 'recording') return resolve(null);
+    mr.onstop = () => {
+      const blob = new Blob(chunks.current, { type: mr.mimeType });
+      const duration = Math.max(1, Math.round((Date.now() - started.current) / 1000));
+      cleanup(); mediaRec.current = null;
+      if (mounted.current) { setRecording(false); setSeconds(0); }
+      resolve({ blob, duration, url: URL.createObjectURL(blob) });
+    };
+    mr.stop();
+  }), []);
   const cancel = useCallback(() => {
     const mr = mediaRec.current;
-    if (mr && mr.state !== 'inactive') mr.stop();
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    clearInterval(timerRef.current);
-    chunks.current = [];
-    setRecording(false);
-    setSeconds(0);
+    if (mr?.state === 'recording') { mr.onstop = null; mr.stop(); }
+    cleanup(); chunks.current = []; mediaRec.current = null; setRecording(false); setSeconds(0);
   }, []);
-
   return { recording, seconds, start, stop, cancel };
 }

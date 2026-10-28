@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer components {
+  .field { @apply w-full rounded-xl border border-white/10 bg-ink-900/80 px-3 py-2.5 text-slate-100 placeholder-slate-500 outline-none focus:border-brand-500/60; }
+  .field-label { @apply block space-y-2 text-xs font-medium text-slate-400; }
+  .btn-primary { @apply flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-500 disabled:opacity-40 disabled:cursor-not-allowed; }
+  .btn-secondary { @apply flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm transition hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed; }
+  .icon-btn { @apply p-2.5 rounded-xl text-slate-400 transition hover:text-brand-400 hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed; }
+  .call-control { @apply w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition active:scale-95 disabled:opacity-40; }
+}
+
 @layer base {
   html,
   body,

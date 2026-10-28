@@ -1,219 +1,56 @@
-/* ============================================================
-   WebRTC — Production-grade with TURN + track handling
-   ============================================================ */
-
-const ICE_SERVERS = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    {
-      urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-  ],
-  iceCandidatePoolSize: 10,
-  bundlePolicy: 'max-bundle',
-  rtcpMuxPolicy: 'require',
+const getIceConfig = () => {
+  try { const configured = JSON.parse(import.meta.env.VITE_ICE_SERVERS || 'null'); if (Array.isArray(configured) && configured.length) return { iceServers: configured }; } catch { /* Use STUN for local development. */ }
+  return { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
 };
 
 export class CallSession {
-  constructor({ socket, callId, peerId, type, onIce, onRemoteStream, onEnded }) {
-    this.socket = socket;
-    this.callId = callId;
-    this.peerId = peerId;
-    this.type = type;
-    this.onIce = onIce;
-    this.onRemoteStream = onRemoteStream;
-    this.onEnded = onEnded;
-
-    this.pc = null;
-    this.localStream = null;
-    this.remoteStream = null;
-    this.iceQueue = [];
-    this.trackIds = new Set();
+  constructor({ callId, peerId, type, onIce, onRemoteStream, onEnded, onConnected }) {
+    Object.assign(this, { callId, peerId, type, onIce, onRemoteStream, onEnded, onConnected });
+    this.pc = null; this.localStream = null; this.remoteStream = null; this.iceQueue = []; this.destroyed = false;
   }
-
   async startLocal() {
-    const constraints = {
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-        sampleRate: 48000,
-      },
-      video:
-        this.type === 'video'
-          ? {
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-              frameRate: { ideal: 30 },
-              facingMode: 'user',
-            }
-          : false,
-    };
-
-    try {
-      this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
-      return this.localStream;
-    } catch (err) {
-      if (this.type === 'video') {
-        // fallback
-        this.localStream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-          video: true,
-        });
-        return this.localStream;
-      }
-      throw err;
-    }
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('Calls need HTTPS or localhost and microphone permission.');
+    if (navigator.audioSession) { this.previousAudioType = navigator.audioSession.type; try { navigator.audioSession.type = 'play-and-record'; } catch {} }
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: this.type === 'video' ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } : false });
+    if (this.destroyed) { stream.getTracks().forEach((t) => t.stop()); throw new Error('Call cancelled'); }
+    this.localStream = stream; return stream;
   }
-
   createPeer() {
-    this.pc = new RTCPeerConnection(ICE_SERVERS);
-    this.remoteStream = new MediaStream();
-    this.trackIds = new Set();
-
-    // add local tracks
-    if (this.localStream) {
-      this.localStream.getTracks().forEach((t) => {
-        this.pc.addTrack(t, this.localStream);
-      });
-    }
-
-    // ---------- on remote track ----------
-    this.pc.ontrack = (event) => {
-      console.log('[WebRTC] ontrack:', event.track.kind, event.track.id);
-
-      // Add track to remote stream if not already
-      if (!this.trackIds.has(event.track.id)) {
-        this.trackIds.add(event.track.id);
-        this.remoteStream.addTrack(event.track);
-      }
-
-      // Force unmute (iOS Safari bug)
-      event.track.enabled = true;
-
-      // Notify with NEW reference (forces React re-render)
-      const freshStream = new MediaStream(this.remoteStream.getTracks());
-      this.onRemoteStream?.(freshStream);
-
-      // Listen for mute/unmute
-      event.track.onunmute = () => {
-        console.log('[WebRTC] track unmuted:', event.track.kind);
-        const s = new MediaStream(this.remoteStream.getTracks());
-        this.onRemoteStream?.(s);
-      };
+    if (this.destroyed) throw new Error('Call cancelled');
+    const pc = new RTCPeerConnection(getIceConfig()); this.pc = pc; this.remoteStream = new MediaStream();
+    this.localStream?.getTracks().forEach((track) => pc.addTrack(track, this.localStream));
+    pc.ontrack = ({ track }) => {
+      if (!this.remoteStream.getTrackById(track.id)) this.remoteStream.addTrack(track);
+      const publish = () => { if (!this.destroyed) this.onRemoteStream?.(new MediaStream(this.remoteStream.getTracks())); };
+      track.onunmute = publish; publish();
     };
-
-    // ---------- ICE candidates ----------
-    this.pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        const c = event.candidate.toJSON
-          ? event.candidate.toJSON()
-          : event.candidate;
-        this.onIce?.(c);
-      }
+    pc.onicecandidate = ({ candidate }) => { if (candidate && !this.destroyed) this.onIce?.(candidate.toJSON ? candidate.toJSON() : candidate); };
+    pc.onconnectionstatechange = () => {
+      if (this.destroyed) return;
+      if (pc.connectionState === 'connected') { clearTimeout(this.connectTimer); clearTimeout(this.disconnectTimer); this.onConnected?.(); }
+      else if (pc.connectionState === 'failed') this.onEnded?.();
+      else if (pc.connectionState === 'disconnected') { clearTimeout(this.disconnectTimer); this.disconnectTimer = setTimeout(() => { if (!this.destroyed && pc.connectionState === 'disconnected') this.onEnded?.(); }, 15000); }
     };
-
-    this.pc.oniceconnectionstatechange = () => {
-      const s = this.pc.iceConnectionState;
-      console.log('[WebRTC] ICE:', s);
-      if (s === 'failed') {
-        this.pc.restartIce?.();
-      }
-    };
-
-    this.pc.onconnectionstatechange = () => {
-      const s = this.pc.connectionState;
-      console.log('[WebRTC] Conn:', s);
-      if (s === 'failed' || s === 'closed') {
-        this.onEnded?.();
-      }
-    };
-
-    return this.pc;
+    return pc;
   }
-
-  async createOffer() {
-    this.createPeer();
-    const offer = await this.pc.createOffer({
-      offerToReceiveAudio: true,
-      offerToReceiveVideo: this.type === 'video',
-    });
-    await this.pc.setLocalDescription(offer);
-    return offer;
-  }
-
+  async createOffer() { const pc = this.createPeer(); await pc.setLocalDescription(await pc.createOffer()); return pc.localDescription.toJSON(); }
   async acceptOffer(offer) {
-    this.createPeer();
-    await this.pc.setRemoteDescription(new RTCSessionDescription(offer));
-    const answer = await this.pc.createAnswer();
-    await this.pc.setLocalDescription(answer);
-    this._flushIce();
-    return answer;
+    const pc = this.createPeer(); await pc.setRemoteDescription(offer); this.armConnectionTimeout(); await this.flushIce(); await pc.setLocalDescription(await pc.createAnswer()); return pc.localDescription.toJSON();
   }
-
-  async acceptAnswer(answer) {
-    if (!this.pc) return;
-    if (this.pc.signalingState === 'stable') return;
-    await this.pc.setRemoteDescription(new RTCSessionDescription(answer));
-    this._flushIce();
-  }
-
+  async acceptAnswer(answer) { if (!this.pc || this.destroyed) return; await this.pc.setRemoteDescription(answer); this.armConnectionTimeout(); await this.flushIce(); }
+  armConnectionTimeout() { clearTimeout(this.connectTimer); this.connectTimer = setTimeout(() => { if (!this.destroyed && this.pc?.connectionState !== 'connected') this.onEnded?.(); }, 35000); }
   async addIce(candidate) {
-    if (!candidate) return;
-    if (!this.pc || !this.pc.remoteDescription) {
-      this.iceQueue.push(candidate);
-      return;
-    }
-    try {
-      await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
-    } catch (e) {
-      console.warn('[WebRTC] ICE add failed:', e);
-    }
+    if (!candidate || this.destroyed) return;
+    if (!this.pc?.remoteDescription) { this.iceQueue.push(candidate); return; }
+    try { await this.pc.addIceCandidate(candidate); } catch (e) { console.warn('Could not add ICE candidate:', e.name); }
   }
-
-  _flushIce() {
-    while (this.iceQueue.length) {
-      const c = this.iceQueue.shift();
-      this.pc
-        .addIceCandidate(new RTCIceCandidate(c))
-        .catch((e) => console.warn('flush ICE err:', e));
-    }
-  }
-
-  toggleMic(enabled) {
-    this.localStream?.getAudioTracks().forEach((t) => (t.enabled = enabled));
-  }
-
-  toggleCam(enabled) {
-    this.localStream?.getVideoTracks().forEach((t) => (t.enabled = enabled));
-  }
-
+  async flushIce() { const queue = this.iceQueue.splice(0); for (const candidate of queue) await this.addIce(candidate); }
   destroy() {
-    try {
-      this.localStream?.getTracks().forEach((t) => t.stop());
-      this.remoteStream?.getTracks().forEach((t) => t.stop());
-    } catch {}
-    try {
-      this.pc?.close();
-    } catch {}
-    this.pc = null;
-    this.localStream = null;
-    this.remoteStream = null;
-    this.iceQueue = [];
-    this.trackIds = new Set();
+    if (this.destroyed) return;
+    this.destroyed = true; clearTimeout(this.connectTimer); clearTimeout(this.disconnectTimer);
+    this.localStream?.getTracks().forEach((t) => t.stop()); this.remoteStream?.getTracks().forEach((t) => t.stop());
+    if (this.pc) { this.pc.onconnectionstatechange = null; this.pc.onicecandidate = null; this.pc.ontrack = null; this.pc.close(); }
+    if (navigator.audioSession && this.previousAudioType) { try { navigator.audioSession.type = this.previousAudioType; } catch {} }
+    this.pc = null; this.localStream = null; this.remoteStream = null; this.iceQueue = [];
   }
 }
