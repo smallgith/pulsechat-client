@@ -139,19 +139,20 @@ const MessageInput = forwardRef(function MessageInput(
     setError('');
     setPicker(null);
     batch.current ||= crypto.randomUUID();
+    const submittedText = text.trim();
     try {
       const files = await attachments.uploadAll();
       if (!alive.current) return;
       if (!text.trim() && !files.length) return;
       await onSend({
         clientId: batch.current,
-        text: text.trim(),
+        text: submittedText,
         file: files[0] || null,
         files,
         replyTo: replyTo ? { id: replyTo.id } : null,
       });
       if (!alive.current) return;
-      setText('');
+      setText(current => current.trim() === submittedText ? '' : current);
       attachments.clear();
       batch.current = null;
       onCancelReply?.();
@@ -163,7 +164,10 @@ const MessageInput = forwardRef(function MessageInput(
       sending.current = false;
       if (alive.current) {
         setBusy(false);
-        textarea.current?.focus();
+        // Keep keyboard focus after Send, without stealing focus from another control.
+        if (!disabled && !document.activeElement?.closest('[role=dialog]')) {
+          requestAnimationFrame(() => textarea.current?.focus({ preventScroll: true }));
+        }
       }
     }
   };
@@ -429,13 +433,13 @@ const MessageInput = forwardRef(function MessageInput(
               maxLength={4000}
               placeholder="Message"
               value={text}
-              disabled={disabled || busy}
+              disabled={disabled}
               onChange={(e) => {
                 changed(e.target.value);
                 if (e.target.value === '/') setPicker('templates');
               }}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !e.ctrlKey && !e.metaKey) {
                   e.preventDefault();
                   submit();
                 }
@@ -493,7 +497,7 @@ const MessageInput = forwardRef(function MessageInput(
               <Loader2 className="animate-spin" size={19} />
             </button>
           ) : text.trim() || attachments.items.length ? (
-            <button className="send-button" aria-label="Send" disabled={disabled} onClick={submit}>
+            <button className="send-button" aria-label="Send" disabled={disabled} onMouseDown={(e) => e.preventDefault()} onClick={submit}>
               <Send size={18} />
             </button>
           ) : (

@@ -81,6 +81,7 @@ export default function ChatWindow({
   me,
   user,
   messages,
+  people,
   typing,
   muted,
   favorite,
@@ -114,9 +115,19 @@ export default function ChatWindow({
   const [confirm, setConfirm] = useState(null);
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
+  useEffect(() => {
+    const search = () => setSearchOpen(true);
+    window.addEventListener('pulsechat:search-chat', search);
+    return () => window.removeEventListener('pulsechat:search-chat', search);
+  }, []);
   const composer = useRef(),
     dragDepth = useRef(0);
   const [dragging, setDragging] = useState(false);
+  useEffect(() => {
+    if (!user?.phone || !window.matchMedia('(min-width: 768px)').matches) return;
+    const timer = setTimeout(() => composer.current?.focus(), 70);
+    return () => clearTimeout(timer);
+  }, [user?.phone]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -377,6 +388,7 @@ export default function ChatWindow({
                     )}
                     <MessageBubble
                       message={m}
+                      people={people}
                       me={me}
                       onCardAction={onCardAction}
                       onOpenContact={onOpenContact}
@@ -384,7 +396,7 @@ export default function ChatWindow({
                       onDecision={onDecision}
                       mine={m.from === me}
                       onDelete={askDelete}
-                      onReply={(msg) => setReplyTo(msg)}
+                      onReply={(msg) => { setReplyTo(msg); requestAnimationFrame(() => composer.current?.focus()); }}
                       onReact={(msg, emoji) => onReactMessage?.(msg, emoji)}
                       showName={user.isGroup && m.from !== me}
                       starred={preferences.starred.includes(m.id)}

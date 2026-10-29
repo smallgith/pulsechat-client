@@ -26,6 +26,7 @@ import {
   Layers,
   X,
   Archive,
+  Ban, Trash2, Bell, Heart, Eraser, MoreVertical,
 } from 'lucide-react';
 import Avatar from './Avatar';
 import { shortPreview, formatTime } from '../lib/format';
@@ -43,13 +44,15 @@ export default function Sidebar({
   preferences: p,
   onFeature,
   onBulk,
+  onChatAction,
   lockEnabled,
 }) {
   const [q, setQ] = useState(''),
     [tab, setTab] = useState('all'),
     [menuOpen, setMenuOpen] = useState(false),
     [selecting, setSelecting] = useState(false),
-    [checked, setChecked] = useState([]);
+    [checked, setChecked] = useState([]),
+    [context, setContext] = useState(null);
   const menu = useRef();
   useEffect(() => {
     if (!menuOpen) return;
@@ -59,6 +62,18 @@ export default function Sidebar({
     document.addEventListener('pointerdown', close);
     return () => document.removeEventListener('pointerdown', close);
   }, [menuOpen]);
+  useEffect(() => {
+    if (!context) return;
+    const close = (event) => { if (event.key === 'Escape' || event.type === 'pointerdown') setContext(null); };
+    document.addEventListener('pointerdown', close);
+    document.addEventListener('keydown', close);
+    return () => { document.removeEventListener('pointerdown', close); document.removeEventListener('keydown', close); };
+  }, [context]);
+  const openContext = (event, user) => {
+    event.preventDefault();
+    setContext({ user, x: Math.max(8, Math.min(event.clientX, window.innerWidth - 260)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - 320)) });
+  };
   const filtered = useMemo(
     () =>
       users
@@ -343,6 +358,7 @@ export default function Sidebar({
                 )}
                 <button
                   onClick={() => onSelect(u)}
+                  onContextMenu={(e) => openContext(e, u)}
                   className={`chat-list-item ${selected?.phone === u.phone ? 'active' : ''}`}
                 >
                   <div className="relative">
@@ -382,6 +398,25 @@ export default function Sidebar({
             );
           })}
         </div>
+        {context && (
+          <div className="desktop-chat-popover" style={{ left: context.x, top: context.y }}
+            onPointerDown={(event) => event.stopPropagation()} role="menu" aria-label="Chat actions">
+            {[
+              ['pin', p.pinned.includes(context.user.phone) ? 'Unpin chat' : 'Pin chat', Pin],
+              ['mute', p.muted.includes(context.user.phone) ? 'Unmute notifications' : 'Mute notifications', BellOff],
+              ['favorite', p.favorites.includes(context.user.phone) ? 'Remove favourite' : 'Add to favourites', Star],
+              ['archive', p.archived.includes(context.user.phone) ? 'Unarchive chat' : 'Archive chat', Archive],
+              ...(!context.user.isGroup && !context.user.isSelf
+                ? [['block', p.blocked.includes(context.user.phone) ? 'Unblock contact' : 'Block contact', Ban]] : []),
+              ['clear', 'Clear chat', Eraser], ['delete', 'Delete chat', Trash2],
+            ].map(([action,label,Icon]) => (
+              <button type="button" role="menuitem" key={action}
+                onClick={() => { const u = context.user; setContext(null); onChatAction?.(action,u); }}>
+                <Icon size={16} /> {label}
+              </button>
+            ))}
+          </div>
+        )}
         <footer className="inbox-footer">
           <button className="profile-summary" onClick={() => onFeature('profile')}>
             <Avatar name={me.name} size={31} src={me.avatarUrl} color={me.avatarColor} variant={me.avatarStyle} focus={me.avatarFocus} />

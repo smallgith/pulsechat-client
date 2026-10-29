@@ -22,6 +22,8 @@ import WorkDialog, { workDialogTypes } from './components/WorkDialog';
 import AppLock from './components/AppLock';
 import DeviceLinkApproval from './components/DeviceLinkApproval';
 import { useAppLock } from './hooks/useAppLock';
+import { useGroupCalls } from './hooks/useGroupCalls';
+import GroupCallPanel from './components/GroupCallPanel';
 
 const USER_KEY = 'pulsechat.user';
 const defaultPrefs = {
@@ -135,7 +137,14 @@ export default function Messenger() {
       if (!me || lock.locked) return;
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
-      if (mod && key === 'k') { e.preventDefault(); setDialog({ type: 'command' }); }
+      if (mod && (key === 'm' || key === 'j')) { e.preventDefault(); document.querySelector('[data-message-composer]')?.focus(); }
+      else if (!mod && key === '/' && !/input|textarea|select/i.test(e.target?.tagName || '') && !e.target?.isContentEditable) { e.preventDefault(); document.querySelector('[aria-label="Search chats"]')?.focus(); }
+      else if (mod && /^[1-9]$/.test(key) && !e.shiftKey && !e.altKey) {
+        const all = [...latest.current.users, ...latest.current.groups].filter(u => u.phone !== latest.current.me?.phone);
+        if (all[Number(key)-1]) { e.preventDefault(); setSelectedId(all[Number(key)-1].phone); }
+      }
+      else if (mod && e.shiftKey && key === 'f') { e.preventDefault(); window.dispatchEvent(new CustomEvent('pulsechat:search-chat')); }
+      else if (mod && key === 'k') { e.preventDefault(); setDialog({ type: 'command' }); }
       else if (mod && key === '/') { e.preventDefault(); setDialog({ type: 'shortcuts' }); }
       else if (mod && e.shiftKey && key === 'n') { e.preventDefault(); setDialog({ type: 'group_create' }); }
       else if (mod && e.shiftKey && key === 'l') { e.preventDefault(); if (!callRef.current) lock.lock(); }
@@ -168,6 +177,7 @@ export default function Messenger() {
       })
     );
   }, []);
+  const groupCalling = useGroupCalls({ connected, socketRef, request, me, notice, directCallRef: callRef });
   const endCall = useCallback((remote = false) => {
     const c = callRef.current;
     if (c && !remote) socketRef.current?.emit('call_end', { callId: c.callId });
@@ -324,6 +334,7 @@ export default function Messenger() {
       showBrowserNotification({
         title: senderName,
         body: preview,
+        icon: target?.avatarUrl || '/icon-192.png',
         tag: `chat-${msg.roomId}`,
         force: true,
         chatUrl: `/?chat=${encodeURIComponent(targetId)}`,
@@ -331,7 +342,7 @@ export default function Messenger() {
       });
       if (document.visibilityState === 'visible') {
         clearTimeout(toastTimer.current);
-        setToast({ from: senderName, preview, time: '', canReply: true, _raw: msg, targetId });
+        setToast({ from: senderName, avatar: target?.avatarUrl, preview, time: '', canReply: true, _raw: msg, targetId });
         toastTimer.current = setTimeout(() => setToast(null), 6000);
       }
     });
@@ -351,7 +362,7 @@ export default function Messenger() {
     });
     socket.on('incoming_call', (data) => {
       if (callRef.current?.callId === data.callId) return;
-      if (callRef.current) {
+      if (callRef.current || groupCalling.activeRef.current) {
         socket.emit('call_reject', { callId: data.callId });
         return;
       }
@@ -492,7 +503,7 @@ export default function Messenger() {
   }, [activeMessages, selectedId, connected, me?.phone, lock.locked]);
   useEffect(() => {
     const handler = (e) => {
-      if (e.data?.type === 'OPEN_CHAT' && /^(\d{10}|group:[a-f0-9-]{36})$/.test(e.data.chat || '')) {
+      if (e.data?.type === 'OPEN_CHAT' && /^(\d{10}|google:[A-Za-z0-9_-]{5,128}|group:[a-f0-9-]{36})$/.test(e.data.chat || '')) {
         setSelectedId(e.data.chat);
         if (e.data.reply) setTimeout(() => document.querySelector('[data-message-composer]')?.focus(), 200);
       }
@@ -538,18 +549,16 @@ export default function Messenger() {
     await sendTo(latest.current.selectedId, payload);
   };
   const setPref = (key, value) =>
-    request('preferences', { key, value, enabled: !preferences[key].includes(value) }).catch((e) =>
-      notice(e.message)
-    );
+    request('preferences', { key, value, enabled: !preferences[key].includes(value) });
   const deleteMessage = (m, forEveryone) =>
     request('delete_message', { roomId: m.roomId, messageId: m.id, forEveryone }).catch((e) =>
       notice(e.message)
     );
-  const chatAction = async (action) => {
-    if (!selected) return;
-    const id = selected.phone;
+  const chatAction = async (action, target = selected) => {
+    if (!target) return;
+    const id = target.phone;
     if (['board', 'lists', 'report', 'task', 'decision', 'schedule'].includes(action)) {
-      openFeature(action, { user: selected });
+      openFeature(action, { user: target });
       return;
     }
     if (action === 'focus') {
@@ -566,21 +575,21 @@ export default function Messenger() {
       }[action];
       if (action === 'block' && !preferences.blocked.includes(id))
         setConfirm({
-          title: `Block ${selected.name}?`,
+          title: `Block ${target.name}?`,
           message: 'You will no longer exchange direct messages or calls with this contact.',
           run: () => setPref(key, id),
         });
       else await setPref(key, id);
     } else if (['contact', 'media', 'starred'].includes(action))
-      setDialog({ type: action, user: selected });
-    else if (action === 'disappearing') setDialog({ type: 'timer', user: selected });
+      setDialog({ type: action, user: target });
+    else if (action === 'disappearing') setDialog({ type: 'timer', user: target });
     else if (['clear', 'delete'].includes(action))
       setConfirm({
         title: action === 'clear' ? 'Clear chat?' : 'Delete chat?',
         message: 'Messages will be removed for you. Other members keep their copies.',
         run: async () => {
           await request('clear_chat', { with: id, hide: action === 'delete' });
-          if (action === 'delete') setSelectedId(null);
+          if (action === 'delete' && selectedId === id) setSelectedId(null);
         },
       });
     else if (action === 'export') {
@@ -593,7 +602,7 @@ export default function Messenger() {
       const url = URL.createObjectURL(new Blob([content], { type: 'text/plain;charset=utf-8' }));
       const a = document.createElement('a');
       a.href = url;
-      a.download = `PulseChat-${selected.name.replace(/[^a-z0-9]/gi, '_')}.txt`;
+      a.download = `PulseChat-${target.name.replace(/[^a-z0-9]/gi, '_')}.txt`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } else if (action === 'share') {
@@ -630,7 +639,13 @@ export default function Messenger() {
       },
     });
   const startCall = async (type, target = selected) => {
-    if (!target || target.isGroup || target.phone === me.phone) return;
+    if (!target || target.phone === me.phone) return;
+    if (target.isGroup) {
+      if (callRef.current || groupCalling.call) { notice('Finish the current call first'); return; }
+      try { await groupCalling.start(target, type); } catch (e) { notice(e.message); }
+      return;
+    }
+    if (groupCalling.call) { notice('Finish the group call first'); return; }
     if (callRef.current) {
       notice('End your current call first');
       return;
@@ -706,6 +721,7 @@ export default function Messenger() {
   };
   const logout = async () => {
     endCall();
+    groupCalling.leave();
     try {
       await fetch(`${SOCKET_URL}/api/logout`, {
         method: 'POST',
@@ -766,6 +782,7 @@ export default function Messenger() {
           onLogout={logout}
           onFeature={openFeature}
           lockEnabled={lock.enabled}
+          onChatAction={(action, target) => chatAction(action, target).catch(e => notice(e.message))}
           onBulk={async (action, targets) => {
             try {
               if (action === 'read') await request('mark_read', { targets });
@@ -784,6 +801,7 @@ export default function Messenger() {
           me={me.phone}
           user={selected}
           messages={activeMessages}
+          people={allChats}
           typing={typingPeople.length ? typingPeople.map((p) => p.fromName).join(', ') : ''}
           muted={preferences.muted.includes(selectedId)}
           favorite={preferences.favorites.includes(selectedId)}
@@ -823,7 +841,7 @@ export default function Messenger() {
           onEditMessage={(message) => setDialog({ type: 'edit', message })}
           onForwardMessage={(message) => setDialog({ type: 'forward', message })}
           onForwardMany={(messages) => setDialog({ type: 'forward', messages })}
-          onStarMessage={(m) => setPref('starred', m.id)}
+          onStarMessage={(m) => setPref('starred', m.id).catch(e => notice(e.message))}
           onAction={(key) => {
             chatAction(key).catch((e) => notice(e.message));
           }}
@@ -836,10 +854,15 @@ export default function Messenger() {
           if (toast?.targetId) setSelectedId(toast.targetId);
           setToast(null);
         }}
-        onReply={(text) => sendTo(toast.targetId, { text }).catch((e) => notice(e.message))}
+        onReply={(text) => sendTo(toast.targetId, { text })}
       />
       <NotificationPrompt />
       <InstallAppPrompt />
+      {groupCalling.call && (
+        <GroupCallPanel call={groupCalling.call} localStream={groupCalling.localStream}
+          remotes={groupCalling.remotes} onAccept={groupCalling.answer}
+          onLeave={groupCalling.leave} onNotice={notice} users={users} />
+      )}
       {call && (
         <CallModal
           key={call.callId}
@@ -914,6 +937,7 @@ export default function Messenger() {
           request={request}
           onSelect={select}
           onCall={startCall}
+          onChatAction={(action, target) => chatAction(action, target).catch(e => notice(e.message))}
           onNotice={notice}
           onFeature={openFeature}
           onForward={async (u, list) => {

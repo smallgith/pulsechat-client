@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Phone, Video, Users, Star, Check, Trash2, Plus, Eye } from 'lucide-react';
+import { Phone, Video, Users, Star, Check, Trash2, Plus, Eye, Ban, Eraser } from 'lucide-react';
 import Modal from './Modal';
 import Avatar from './Avatar';
 import { formatTime, shortPreview } from '../lib/format';
@@ -23,6 +23,7 @@ export default function FeatureDialog({
   request,
   onSelect,
   onCall,
+  onChatAction,
   onForward,
   onNotice,
   onFeature,
@@ -34,6 +35,7 @@ export default function FeatureDialog({
   const [avatarUrl, setAvatarUrl] = useState(me.avatarUrl || '');
   const [avatarColor, setAvatarColor] = useState(me.avatarColor || '#7050cc');
   const [avatarStyle, setAvatarStyle] = useState(me.avatarStyle || 'initials');
+  const [avatarFocus, setAvatarFocus] = useState(me.avatarFocus ?? 50);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [aiStyle, setAiStyle] = useState('cinematic');
   const [aiPrompt, setAiPrompt] = useState('');
@@ -147,10 +149,10 @@ export default function FeatureDialog({
       {dialog.type === 'profile' && (
         <form
           className="space-y-4"
-          onSubmit={(e) => submit(e, () => request('profile', { name, about, avatarUrl, avatarColor, avatarStyle }))}
+          onSubmit={(e) => submit(e, () => request('profile', { name, about, avatarUrl, avatarColor, avatarStyle, avatarFocus }))}
         >
           <div className="flex justify-center">
-            <Avatar name={name} size={80} src={avatarUrl} color={avatarColor} variant={avatarStyle} />
+            <Avatar name={name} size={80} src={avatarUrl} color={avatarColor} variant={avatarStyle} focus={avatarFocus} />
           </div>
           <p className="text-center text-slate-400 text-sm">{me.phone.startsWith('google:') ? 'Google account' : me.phone}</p>
           {googleClientId && !me.phone.startsWith('google:') && <div className="border border-white/10 rounded-xl p-3 space-y-2">
@@ -167,6 +169,10 @@ export default function FeatureDialog({
             {avatarUrl && <button type="button" className="btn-secondary" onClick={() => setAvatarUrl('')}>Remove photo</button>}
           </div>
           {cameraOpen && <CameraCapture onCapture={saveAvatar} onClose={() => setCameraOpen(false)} />}
+          {avatarUrl && <label className="field-label">Photo alignment ({avatarFocus}%)
+            <input type="range" min="0" max="100" step="1" value={avatarFocus}
+              onChange={e => setAvatarFocus(Number(e.target.value))} className="w-full accent-violet-600" />
+          </label>}
           <div className="space-y-2">
             <p className="field-label">Illustrated avatar style</p>
             <div className="grid grid-cols-4 gap-2">
@@ -490,6 +496,10 @@ export default function FeatureDialog({
                 request={request}
                 onClone={(source) => onFeature('group_create', { source })}
               />
+              <div className="flex gap-2">
+                <button type="button" className="btn-secondary flex-1" onClick={() => { onClose(); onCall('audio', group); }}><Phone size={16}/> Group voice call</button>
+                <button type="button" className="btn-secondary flex-1" onClick={() => { onClose(); onCall('video', group); }}><Video size={16}/> Group video call</button>
+              </div>
               <button
                 className="btn-secondary w-full text-red-400"
                 disabled={busy}
@@ -528,6 +538,22 @@ export default function FeatureDialog({
                     }}
                   >
                     <Video size={16} /> Video call
+                  </button>
+                </div>
+              )}
+              {user.phone !== me.phone && (
+                <div className="space-y-2 border-t border-white/10 pt-4">
+                  <button type="button" className="btn-secondary w-full justify-start"
+                    onClick={() => { onClose(); onChatAction?.('block', user); }}>
+                    <Ban size={16}/> {preferences.blocked.includes(user.phone) ? 'Unblock contact' : 'Block contact'}
+                  </button>
+                  <button type="button" className="btn-secondary w-full justify-start"
+                    onClick={() => { onClose(); onChatAction?.('clear', user); }}>
+                    <Eraser size={16}/> Clear conversation
+                  </button>
+                  <button type="button" className="btn-secondary w-full justify-start text-red-400"
+                    onClick={() => { onClose(); onChatAction?.('delete', user); }}>
+                    <Trash2 size={16}/> Delete conversation
                   </button>
                 </div>
               )}

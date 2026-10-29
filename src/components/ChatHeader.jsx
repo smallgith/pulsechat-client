@@ -81,7 +81,7 @@ export default function ChatHeader({
     ['close', 'Close chat', XCircle],
     ['report', 'Report conversation', Flag],
   ];
-  const canCall = !user.isGroup && id !== me;
+  const canCall = id !== me && (!user.isGroup || user.members?.length > 1);
   return (
     <header className="conversation-header flex items-center gap-2 sm:gap-3 px-2 sm:px-5 py-3 sm:py-4 glass-solid border-b border-white/10 z-30 relative shrink-0 safe-top">
       <button onClick={onBack} className="md:hidden icon-btn" aria-label="Back">
@@ -115,7 +115,7 @@ export default function ChatHeader({
           <>
             <button
               onClick={onVoiceCall}
-              disabled={!connected || p.blocked.includes(id)}
+              disabled={!connected || (!user.isGroup && p.blocked.includes(id))}
               className="icon-btn"
               aria-label="Voice call"
               title="Voice call"
@@ -124,7 +124,7 @@ export default function ChatHeader({
             </button>
             <button
               onClick={onVideoCall}
-              disabled={!connected || p.blocked.includes(id)}
+              disabled={!connected || (!user.isGroup && p.blocked.includes(id))}
               className="icon-btn"
               aria-label="Video call"
               title="Video call"

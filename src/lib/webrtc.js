@@ -6,7 +6,7 @@ const getIceConfig = () => {
 export class CallSession {
   constructor({ callId, peerId, type, onIce, onRemoteStream, onEnded, onConnected }) {
     Object.assign(this, { callId, peerId, type, onIce, onRemoteStream, onEnded, onConnected });
-    this.pc = null; this.localStream = null; this.remoteStream = null; this.iceQueue = []; this.destroyed = false;
+    this.pc = null; this.localStream = null; this.ownsLocal = true; this.remoteStream = null; this.iceQueue = []; this.destroyed = false;
   }
   async startLocal() {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error('Calls need HTTPS or localhost and microphone permission.');
@@ -48,9 +48,9 @@ export class CallSession {
   destroy() {
     if (this.destroyed) return;
     this.destroyed = true; clearTimeout(this.connectTimer); clearTimeout(this.disconnectTimer);
-    this.localStream?.getTracks().forEach((t) => t.stop()); this.remoteStream?.getTracks().forEach((t) => t.stop());
+    if (this.ownsLocal) this.localStream?.getTracks().forEach((t) => t.stop()); this.remoteStream?.getTracks().forEach((t) => t.stop());
     if (this.pc) { this.pc.onconnectionstatechange = null; this.pc.onicecandidate = null; this.pc.ontrack = null; this.pc.close(); }
     if (navigator.audioSession && this.previousAudioType) { try { navigator.audioSession.type = this.previousAudioType; } catch {} }
-    this.pc = null; this.localStream = null; this.remoteStream = null; this.iceQueue = [];
+    this.pc = null; this.localStream = null; this.ownsLocal = true; this.remoteStream = null; this.iceQueue = [];
   }
 }

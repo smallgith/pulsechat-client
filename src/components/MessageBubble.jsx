@@ -14,10 +14,13 @@ import {
   Forward,
   ListTodo,
   Lightbulb,
+  Plus,
 } from 'lucide-react';
 import { formatTime, formatBytes } from '../lib/format';
 import WorkCards from './WorkCards';
 import VoiceNotePlayer from './VoiceNotePlayer';
+import EmojiPicker from './EmojiPicker';
+import { downloadAttachment } from '../lib/download-attachment';
 
 function Ticks({ status }) {
   if (status === 'seen') return <CheckCheck className="w-3.5 h-3.5 text-sky-400" />;
@@ -29,6 +32,7 @@ const REACTIONS = ['❤️', '👍', '😂', '😮', '😢', '🙏'];
 
 export default function MessageBubble({
   message,
+  people = [],
   mine,
   onDelete,
   onReply,
@@ -46,8 +50,15 @@ export default function MessageBubble({
 }) {
   const [lightbox, setLightbox] = useState(false);
   const [reactOpen, setReactOpen] = useState(false);
+  const [allReactions, setAllReactions] = useState(false);
   const [ctx, setCtx] = useState({ open: false, x: 0, y: 0 });
   const [copyError, setCopyError] = useState('');
+  const [downloadError, setDownloadError] = useState('');
+  const saveFile = async (data) => {
+    setDownloadError('');
+    try { await downloadAttachment(data); }
+    catch (error) { setDownloadError(error.message); }
+  };
   const pressTimer = useRef(null);
   const pressStart = useRef(null);
   useEffect(() => {
@@ -179,11 +190,9 @@ export default function MessageBubble({
 
           {/* generic file */}
           {file && !isImage && !isVideo && !isAudio && (
-            <a
-              href={file.url}
-              download={file.name}
-              target="_blank"
-              rel="noreferrer"
+            <button
+              type="button"
+              onClick={() => saveFile(file)}
               className="flex items-center gap-3 px-2.5 py-2.5 rounded-xl bg-black/25 hover:bg-black/40 transition"
             >
               <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
@@ -194,9 +203,15 @@ export default function MessageBubble({
                 <p className="text-[11px] opacity-70">{formatBytes(file.size)}</p>
               </div>
               <Download className="w-4 h-4 opacity-70 shrink-0" />
-            </a>
+            </button>
           )}
 
+          {(file || voice) && (
+            <button className="attachment-download" type="button" onClick={() => saveFile(file || voice)} title="Download attachment">
+              <Download size={14} /> Download {file?.name ? file.name.slice(0, 24) : 'voice message'}
+            </button>
+          )}
+          {downloadError && <p role="alert" className="text-xs px-2 text-red-300">{downloadError}</p>}
           {/* text + meta */}
           <div className="px-2.5 pt-1 pb-0.5">
             {message.text && (
@@ -279,8 +294,15 @@ export default function MessageBubble({
                   {r}
                 </button>
               ))}
+              <button aria-label="More reactions" title="More reactions" type="button"
+                onClick={() => { setReactOpen(false); setAllReactions(true); }}
+                className="text-xl p-1 rounded-full hover:bg-white/10"><Plus size={17}/></button>
             </div>
           )}
+          {allReactions && <EmojiPicker onPick={(emoji) => {
+            onReact?.(message, emoji);
+            setAllReactions(false);
+          }} onClose={() => setAllReactions(false)} />}
 
           {/* reactions display */}
           {reactionEmojis.length > 0 && (
@@ -309,6 +331,15 @@ export default function MessageBubble({
             style={{ left: ctx.x, top: ctx.y }}
             onMouseDown={(e) => e.stopPropagation()}
           >
+            {mine && <div className="px-3 py-2 text-xs border-b border-white/10">
+              <strong>Message info</strong>
+              <span className="block opacity-75 mt-1">Delivered: {Math.max(0, message.deliveredTo?.filter(p => p !== message.from).length || 0)} · Read: {Math.max(0, message.readBy?.filter(p => p !== message.from).length || 0)}</span>
+              {message.readBy?.filter(p => p !== message.from).map(phone => (
+                <span key={phone} className="block opacity-75 leading-5">
+                  {people.find(p => p.phone === phone)?.name || phone} · {message.readAt?.[phone] ? new Date(message.readAt[phone]).toLocaleString() : 'Read'}
+                </span>
+              ))}
+            </div>}
             <button
               onClick={async () => {
                 try {

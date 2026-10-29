@@ -770,6 +770,11 @@ export default function WorkDialog({
         <div className="space-y-2 text-sm">
           {[
             ['Ctrl / ⌘ + K', 'Search and quick commands'],
+            ['Ctrl / ⌘ + M', 'Focus message composer'],
+            ['/', 'Focus chat list search'],
+            ['Ctrl / ⌘ + 1…9', 'Jump to conversation'],
+            ['Ctrl / ⌘ + Shift + F', 'Search within open chat'],
+            ['Enter / Shift + Enter', 'Send / line break'],
             ['Ctrl / ⌘ + /', 'Show this shortcut guide'],
             ['Ctrl / ⌘ + Shift + N', 'Create a group'],
             ['Ctrl / ⌘ + Shift + L', 'Lock the app'],
