@@ -158,6 +158,8 @@ export const showBrowserNotification = async ({
     renotify: true,
     silent: false,
     data: { url: chatUrl },
+    ...(tag?.startsWith('chat-') ? { actions: [{ action: 'reply', title: 'Reply in app' }, { action: 'open', title: 'Open' }] } : {}),
+    ...(tag?.startsWith('call-') ? { requireInteraction: true } : {}),
   };
 
   try {
@@ -175,7 +177,8 @@ export const showBrowserNotification = async ({
       }
     }
 
-    const n = new Notification(title || 'PulseChat', opts);
+    const { actions: _actions, ...directOpts } = opts;
+    const n = new Notification(title || 'PulseChat', directOpts);
     console.log('[notif] shown via direct API');
     n.onclick = () => {
       window.focus();
@@ -200,6 +203,11 @@ export const setBaseTitle = (t) => {
 
 export const setUnreadTotal = (n) => {
   unreadTotal = Math.max(0, n | 0);
+  // Native app-style badge where installed PWA/browser supports it.
+  try {
+    if (unreadTotal && navigator.setAppBadge) navigator.setAppBadge(unreadTotal).catch(() => {});
+    else if (!unreadTotal && navigator.clearAppBadge) navigator.clearAppBadge().catch(() => {});
+  } catch { /* Badge API is optional. */ }
   document.title =
     unreadTotal > 0 ? `(${unreadTotal}) ${BASE_TITLE}` : BASE_TITLE;
   updateFavicon(unreadTotal > 0);

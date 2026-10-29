@@ -21,6 +21,10 @@ export default function Login({ onJoin, error }) {
   const [resendIn, setResendIn] = useState(0);
   const [demoAuth, setDemoAuth] = useState(false);
   const [token, setToken] = useState('');
+  const [link, setLink] = useState(null);
+  const [linkStatus, setLinkStatus] = useState('');
+  const onJoinRef = useRef(onJoin);
+  onJoinRef.current = onJoin;
 
   const otpRefs = useRef([]);
   const timerRef = useRef(null);
@@ -30,6 +34,48 @@ export default function Login({ onJoin, error }) {
     if (step === 'otp') otpRefs.current[0]?.focus();
   }, [step]);
 
+  useEffect(() => {
+    if (!link?.requestId || !link.secret) return;
+    let active = true;
+    let checking = false;
+    const poll = async () => {
+      if (checking || !active) return;
+      checking = true;
+      try {
+        const res = await fetch(`${SOCKET_URL}/api/device-link/status`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requestId: link.requestId, secret: link.secret }),
+        });
+        const data = await res.json();
+        if (!active) return;
+        if (!res.ok) throw new Error(data.error || 'This device-link request expired');
+        if (data.status === 'approved') {
+          active = false;
+          onJoinRef.current({ phone: data.user.phone, name: data.user.name, token: data.token });
+        }
+      } catch (err) {
+        if (active) { setLocalErr(err.message); setLink(null); setStep('phone'); }
+      } finally { checking = false; }
+    };
+    const timer = setInterval(poll, 2500);
+    poll();
+    return () => { active = false; clearInterval(timer); };
+  }, [link?.requestId, link?.secret]);
+  const startDeviceLink = async () => {
+    setBusy(true); setLocalErr('');
+    try {
+      const response = await fetch(`${SOCKET_URL}/api/device-link/start`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Device linking is unavailable');
+      setLink(data);
+      setStep('link');
+    } catch (err) { setLocalErr(err.message); }
+    finally { setBusy(false); }
+  };
+  const cancelDeviceLink = () => {
+    if (link) fetch(`${SOCKET_URL}/api/device-link/cancel`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({requestId: link.requestId, secret: link.secret}) }).catch(() => {});
+    setLink(null); setStep('phone'); setLocalErr('');
+  };
   const startResendTimer = () => {
     setResendIn(30);
     clearInterval(timerRef.current);
@@ -196,7 +242,7 @@ export default function Login({ onJoin, error }) {
         </div>
 
         {/* steps */}
-        <div className="flex items-center gap-2 mb-5 sm:mb-6">
+        {step !== 'link' && <div className="flex items-center gap-2 mb-5 sm:mb-6">
           {['phone', 'otp', 'name'].map((s, i) => {
             const done = i < stepIndex;
             const active = i === stepIndex;
@@ -223,6 +269,7 @@ export default function Login({ onJoin, error }) {
           })}
         </div>
 
+        }
         {/* PHONE */}
         {step === 'phone' && (
           <form onSubmit={sendOtp} className="space-y-4">
@@ -267,6 +314,18 @@ export default function Login({ onJoin, error }) {
             </button>
           </form>
         )}
+        {step === 'phone' && <button type="button" className="btn-secondary w-full mt-4" disabled={busy} onClick={startDeviceLink}>Already signed in somewhere? Link this device</button>}
+        {step === 'link' && <div className="space-y-4">
+          <p className="text-sm text-slate-300">On your already signed-in device, open <strong>Profile → Link another device</strong>, then enter this 8-digit code.</p>
+          <div className="p-5 rounded-2xl bg-brand-500/10 text-center border border-brand-500/30">
+            <p className="text-xs text-slate-400 mb-2">Your one-time pairing code</p>
+            <p className="text-3xl font-bold tracking-[.22em] tabular-nums select-all">{link?.code}</p>
+            <p className="text-xs text-slate-400 mt-2">Expires after 5 minutes. Never share with strangers.</p>
+          </div>
+          <p role="status" className="text-sm text-slate-400">Waiting for approval from your other device…</p>
+          {localErr && <p className="error-banner">{localErr}</p>}
+          <button type="button" className="btn-secondary w-full" onClick={cancelDeviceLink}>Cancel</button>
+        </div>}
 
         {/* OTP */}
         {step === 'otp' && (

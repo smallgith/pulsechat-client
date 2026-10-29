@@ -70,7 +70,7 @@ const MessageInput = forwardRef(function MessageInput(
     attachments.add(files);
     batch.current = null;
   };
-  useImperativeHandle(ref, () => ({ addFiles }), [
+  useImperativeHandle(ref, () => ({ addFiles, focus: () => textarea.current?.focus() }), [
     disabled,
     busy,
     attachments.items,
@@ -93,6 +93,14 @@ const MessageInput = forwardRef(function MessageInput(
     )
       setText('');
   }, [scheduledDraft?.id]);
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('reply') === '1') {
+      textarea.current?.focus();
+      const url = new URL(location.href);
+      url.searchParams.delete('reply');
+      history.replaceState(null, '', url);
+    }
+  }, []);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -414,7 +422,7 @@ const MessageInput = forwardRef(function MessageInput(
             <Plus size={22} />
           </button>
           <div className="composer-field">
-            <textarea
+            <textarea data-message-composer
               aria-label="Message"
               ref={textarea}
               rows={1}

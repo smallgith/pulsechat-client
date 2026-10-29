@@ -88,7 +88,7 @@ export default function ChatHeader({
         <ArrowLeft size={20} />
       </button>
       <button onClick={() => onAction('contact')} aria-label="Contact info">
-        <Avatar name={user.name} size={42} online={!user.isGroup && user.online} />
+        <Avatar name={user.name} size={42} online={!user.isGroup && user.online} src={user.avatarUrl} color={user.avatarColor} variant={user.avatarStyle} focus={user.avatarFocus} />
       </button>
       <button onClick={() => onAction('contact')} className="min-w-0 flex-1 text-left">
         <h3 className="font-semibold truncate text-[15px] sm:text-base">
@@ -115,7 +115,7 @@ export default function ChatHeader({
           <>
             <button
               onClick={onVoiceCall}
-              disabled={!connected || !user.online || p.blocked.includes(id)}
+              disabled={!connected || p.blocked.includes(id)}
               className="icon-btn"
               aria-label="Voice call"
               title="Voice call"
@@ -124,7 +124,7 @@ export default function ChatHeader({
             </button>
             <button
               onClick={onVideoCall}
-              disabled={!connected || !user.online || p.blocked.includes(id)}
+              disabled={!connected || p.blocked.includes(id)}
               className="icon-btn"
               aria-label="Video call"
               title="Video call"

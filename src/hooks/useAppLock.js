@@ -19,7 +19,8 @@ async function hashPin(pin, salt) {
 export function useAppLock(phone, suspended = false) {
   const key = `pulsechat.lock.${phone}`;
   const [record, setRecord] = useState(null),
-    [locked, setLocked] = useState(false);
+    [locked, setLocked] = useState(false),
+    [wrongAttempts, setWrongAttempts] = useState(0);
   const timer = useRef(),
     failures = useRef(0),
     blockedUntil = useRef(0);
@@ -60,6 +61,7 @@ export function useAppLock(phone, suspended = false) {
   const unlock = async (pin) => {
     if (blockedUntil.current > Date.now()) throw new Error('Wait 30 seconds before trying again.');
     if ((await hashPin(pin, record.salt)) !== record.hash) {
+      setWrongAttempts((n) => n + 1);
       if (++failures.current >= 5) {
         blockedUntil.current = Date.now() + 30000;
         failures.current = 0;
@@ -67,6 +69,7 @@ export function useAppLock(phone, suspended = false) {
       throw new Error('Incorrect PIN');
     }
     failures.current = 0;
+    setWrongAttempts(0);
     setLocked(false);
   };
   const disable = async (pin) => {
@@ -74,10 +77,22 @@ export function useAppLock(phone, suspended = false) {
     localStorage.removeItem(key);
     setRecord(null);
   };
+  const resetPin = async (otp, newPin, token) => {
+    if (wrongAttempts < 3) throw new Error('Reset is available after three incorrect PIN attempts.');
+    if (!/^\d{6,8}$/.test(newPin)) throw new Error('Choose a 6–8 digit PIN.');
+    const response = await fetch(`${import.meta.env.VITE_SOCKET_URL || `${location.protocol}//${location.hostname}:5000`}/api/lock-reset`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ otp }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Could not verify your identity');
+    await setup(newPin);
+    failures.current = 0; setWrongAttempts(0); blockedUntil.current = 0; setLocked(false);
+  };
   const forget = () => {
     localStorage.removeItem(key);
     setRecord(null);
     setLocked(false);
   };
-  return { enabled: !!record, locked, lock, setup, unlock, disable, forget };
+  return { enabled: !!record, locked, wrongAttempts, lock, setup, unlock, disable, forget, resetPin };
 }

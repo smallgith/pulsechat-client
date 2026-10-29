@@ -32,6 +32,7 @@ export const workDialogTypes = [
   'lists',
   'invite',
   'theme',
+  'shortcuts',
   'command',
   'report',
   'reports',
@@ -52,6 +53,8 @@ export default function WorkDialog({
   onAction,
   theme,
   setTheme,
+  customTheme,
+  setCustomTheme,
   onFeature,
   onScheduled,
 }) {
@@ -92,6 +95,7 @@ export default function WorkDialog({
     lists: 'Organise your conversations',
     invite: 'Join a group',
     theme: 'Make yourself at home',
+    shortcuts: 'Desktop keyboard shortcuts',
     command: 'Find anything',
     report: 'Report this conversation',
     reports: 'Reports to review',
@@ -731,6 +735,9 @@ export default function WorkDialog({
             ['daylight', 'Daylight', 'Warm paper, ink and violet'],
             ['midnight', 'Midnight', 'Quiet charcoal, soft lilac'],
             ['sage', 'Botanical', 'Fresh sage, forest and cream'],
+            ['ocean', 'Ocean', 'Crisp ice blue and ocean teal'],
+            ['blush', 'Rose', 'Soft pink and deep berry'],
+            ['custom', 'Custom studio', 'Your own accent and chat background'],
           ].map(([key, name, description]) => (
             <button
               key={key}
@@ -745,7 +752,36 @@ export default function WorkDialog({
               {theme === key && <Check size={18} />}
             </button>
           ))}
+          {theme === 'custom' && (
+            <div className="grid grid-cols-2 gap-3 rounded-xl border border-white/10 p-3">
+              <label className="field-label">Accent colour
+                <input type="color" className="w-full h-11 rounded-lg cursor-pointer" value={customTheme.accent}
+                  onChange={(e) => setCustomTheme((p) => ({ ...p, accent: e.target.value }))} />
+              </label>
+              <label className="field-label">Chat canvas
+                <input type="color" className="w-full h-11 rounded-lg cursor-pointer" value={customTheme.chat}
+                  onChange={(e) => setCustomTheme((p) => ({ ...p, chat: e.target.value }))} />
+              </label>
+            </div>
+          )}
         </>
+      )}
+      {mode === 'shortcuts' && (
+        <div className="space-y-2 text-sm">
+          {[
+            ['Ctrl / ⌘ + K', 'Search and quick commands'],
+            ['Ctrl / ⌘ + /', 'Show this shortcut guide'],
+            ['Ctrl / ⌘ + Shift + N', 'Create a group'],
+            ['Ctrl / ⌘ + Shift + L', 'Lock the app'],
+            ['Alt + ↑ / ↓', 'Switch conversations'],
+            ['Escape', 'Close a dialog'],
+            ['Right-click / hold', 'Message actions'],
+          ].map(([keys, value]) => (
+            <div key={keys} className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-white/5 border border-white/10">
+              <span>{value}</span><kbd className="text-xs whitespace-nowrap text-brand-400">{keys}</kbd>
+            </div>
+          ))}
+        </div>
       )}
       {mode === 'command' && (
         <>
@@ -766,6 +802,7 @@ export default function WorkDialog({
               ['scheduled', 'Outbox'],
               ['group_create', 'New group'],
               ['theme', 'Appearance'],
+              ['shortcuts', 'Shortcuts'],
             ].map(([type, label]) => (
               <button key={type} className="btn-secondary" onClick={() => onFeature(type)}>
                 {label}

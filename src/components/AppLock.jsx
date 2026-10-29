@@ -1,18 +1,25 @@
 import { useState } from 'react';
 import { LockKeyhole, ArrowUpRight, ShieldCheck } from 'lucide-react';
 import Modal from './Modal';
+import { authHeaders, SOCKET_URL } from '../lib/socket';
 
 export default function AppLock({ lock, onClose, onLogout }) {
   const [pin, setPin] = useState(''),
     [confirm, setConfirm] = useState(''),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
+  const [resetting, setResetting] = useState(false), [code, setCode] = useState(''), [sent, setSent] = useState(false), [hint, setHint] = useState('');
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
     setError('');
     try {
-      if (lock.locked) await lock.unlock(pin);
+      if (lock.locked && resetting) {
+        if (pin !== confirm) throw new Error('The PINs do not match.');
+        const token = authHeaders().Authorization?.replace(/^Bearer /, '');
+        await lock.resetPin(code, pin, token);
+        setResetting(false);
+      } else if (lock.locked) await lock.unlock(pin);
       else if (lock.enabled) {
         await lock.disable(pin);
         onClose();
@@ -35,14 +42,18 @@ export default function AppLock({ lock, onClose, onLogout }) {
       </div>
       <div className="text-center">
         <h3 className="text-xl font-semibold">
-          {lock.locked
+          {lock.locked && resetting
+            ? 'Verify and reset your PIN'
+            : lock.locked
             ? 'A little privacy, please.'
             : lock.enabled
               ? 'App lock is enabled'
               : 'Keep your conversations yours.'}
         </h3>
         <p className="text-sm text-slate-400 mt-2">
-          {lock.locked
+          {lock.locked && resetting
+            ? 'Confirm ownership with the one-time code sent to your registered phone.'
+            : lock.locked
             ? 'Enter your PIN to return to your conversations.'
             : 'A screen lock for this browser. Locks after 5 minutes of inactivity and whenever you reopen the app.'}
         </p>
@@ -52,8 +63,29 @@ export default function AppLock({ lock, onClose, onLogout }) {
           {error}
         </p>
       )}
+      {lock.locked && resetting && (
+        <div className="space-y-3">
+          <button type="button" className="btn-secondary w-full" disabled={busy}
+            onClick={async () => {
+              setBusy(true); setError('');
+              try {
+                const current = JSON.parse(localStorage.getItem('pulsechat.user') || '{}');
+                const res = await fetch(`${SOCKET_URL}/api/send-otp`, { method:'POST',
+                  headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ phone: current.phone }) });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Could not send code');
+                setSent(true); setHint(data.hint || '');
+              } catch (e) { setError(e.message); } finally { setBusy(false); }
+            }}>{sent ? 'Send a new code' : 'Send SMS verification code'}</button>
+          {hint && <p className="text-xs text-brand-400">{hint}</p>}
+          {sent && <label className="field-label">One-time code
+            <input className="field" type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6}
+              value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0,6))} required />
+          </label>}
+        </div>
+      )}
       <label className="field-label">
-        {lock.enabled ? 'Your PIN' : 'Choose a 6–8 digit PIN'}
+        {resetting ? 'New 6–8 digit PIN' : lock.enabled ? 'Your PIN' : 'Choose a 6–8 digit PIN'}
         <input
           className="field text-center tracking-[.5em]"
           autoComplete="off"
@@ -67,7 +99,7 @@ export default function AppLock({ lock, onClose, onLogout }) {
           required
         />
       </label>
-      {!lock.enabled && (
+      {(!lock.enabled || resetting) && (
         <label className="field-label">
           Confirm PIN
           <input
@@ -85,7 +117,9 @@ export default function AppLock({ lock, onClose, onLogout }) {
       <button className="btn-primary w-full" disabled={busy}>
         {busy
           ? 'Checking…'
-          : lock.locked
+          : lock.locked && resetting
+            ? 'Verify and save new PIN'
+            : lock.locked
             ? 'Unlock workspace'
             : lock.enabled
               ? 'Disable app lock'
@@ -105,9 +139,14 @@ export default function AppLock({ lock, onClose, onLogout }) {
         </button>
       )}
       {lock.locked ? (
-        <button type="button" className="text-xs text-slate-400 w-full" onClick={onLogout}>
-          Forgot your PIN? Log out and sign in again.
-        </button>
+        <div className="space-y-2">
+          {lock.wrongAttempts >= 3 && <button type="button" className="btn-secondary w-full" onClick={() => { setResetting(!resetting); setError(''); }}>
+            {resetting ? 'Use existing PIN' : 'Forgot PIN? Verify phone and create a new PIN'}
+          </button>}
+          <button type="button" className="text-xs text-slate-400 w-full" onClick={onLogout}>
+            Log out and sign in again
+          </button>
+        </div>
       ) : (
         <p className="text-[11px] text-slate-500 flex gap-2">
           <ShieldCheck size={18} className="shrink-0" />

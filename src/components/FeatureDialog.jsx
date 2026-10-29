@@ -6,6 +6,8 @@ import { formatTime, shortPreview } from '../lib/format';
 import { getPermission, requestPermission } from '../lib/notification';
 import { enablePush } from '../lib/push';
 import GroupTools from './GroupTools';
+import CameraCapture from './CameraCapture';
+import { uploadFile, SOCKET_URL } from '../lib/socket';
 
 export default function FeatureDialog({
   dialog,
@@ -28,6 +30,40 @@ export default function FeatureDialog({
   const [about, setAbout] = useState(dialog.user?.description ?? me.about ?? 'Available');
   const [text, setText] = useState(dialog.message?.text || '');
   const [color, setColor] = useState('#047857');
+  const [avatarUrl, setAvatarUrl] = useState(me.avatarUrl || '');
+  const [avatarColor, setAvatarColor] = useState(me.avatarColor || '#7050cc');
+  const [avatarStyle, setAvatarStyle] = useState(me.avatarStyle || 'initials');
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [aiStyle, setAiStyle] = useState('cinematic');
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiPhoto, setAiPhoto] = useState(null);
+  const [aiBusy, setAiBusy] = useState(false);
+  const generateAiAvatar = async () => {
+    setAiBusy(true); setError('');
+    try {
+      const form = new FormData();
+      form.set('style', aiStyle);
+      form.set('prompt', aiPrompt.trim());
+      if (aiPhoto) form.set('selfie', aiPhoto, aiPhoto.name || 'selfie.jpg');
+      const token = JSON.parse(localStorage.getItem('pulsechat.user') || '{}').token;
+      const response = await fetch(`${SOCKET_URL}/api/ai-avatar`, {
+        method: 'POST', headers: { Authorization: `Bearer ${token || ''}` }, body: form,
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || 'Could not generate an avatar');
+      setAvatarUrl(data.url);
+    } catch (e) { setError(e.message); }
+    finally { setAiBusy(false); }
+  };
+
+  const saveAvatar = async (file) => {
+    if (!file?.type?.startsWith('image/')) throw new Error('Choose a photo');
+    if (file.size > 5 * 1024 * 1024) throw new Error('Profile image must be under 5 MB');
+    setBusy(true); setError('');
+    try { const uploaded = await uploadFile(file); setAvatarUrl(uploaded.url); }
+    catch (e) { setError(e.message || 'Photo could not be uploaded'); }
+    finally { setBusy(false); }
+  };
   const [members, setMembers] = useState([]);
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false),
@@ -92,12 +128,61 @@ export default function FeatureDialog({
       {dialog.type === 'profile' && (
         <form
           className="space-y-4"
-          onSubmit={(e) => submit(e, () => request('profile', { name, about }))}
+          onSubmit={(e) => submit(e, () => request('profile', { name, about, avatarUrl, avatarColor, avatarStyle }))}
         >
           <div className="flex justify-center">
-            <Avatar name={name} size={80} />
+            <Avatar name={name} size={80} src={avatarUrl} color={avatarColor} variant={avatarStyle} />
           </div>
           <p className="text-center text-slate-400 text-sm">{me.phone}</p>
+          <div className="flex gap-2 justify-center flex-wrap">
+            <label className="btn-secondary cursor-pointer">Upload photo
+              <input className="sr-only" type="file" accept="image/*" disabled={busy}
+                onChange={(e) => { const file = e.target.files?.[0]; if (file) saveAvatar(file); e.target.value = ''; }} />
+            </label>
+            <button type="button" className="btn-secondary" onClick={() => setCameraOpen(true)}>Take a photo</button>
+            {avatarUrl && <button type="button" className="btn-secondary" onClick={() => setAvatarUrl('')}>Remove photo</button>}
+          </div>
+          {cameraOpen && <CameraCapture onCapture={saveAvatar} onClose={() => setCameraOpen(false)} />}
+          <div className="space-y-2">
+            <p className="field-label">Illustrated avatar style</p>
+            <div className="grid grid-cols-4 gap-2">
+              {['initials', 'orbit', 'sparkle', 'bloom'].map((v) => (
+                <button type="button" key={v} onClick={() => { setAvatarUrl(''); setAvatarStyle(v); }}
+                  aria-pressed={!avatarUrl && avatarStyle === v} className={`rounded-xl p-2 border ${!avatarUrl && avatarStyle === v ? 'border-brand-500' : 'border-white/10'}`}>
+                  <Avatar name={name} color={avatarColor} variant={v} size={40} />
+                  <span className="block text-[10px] mt-1 capitalize">{v}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <section className="rounded-2xl border border-white/10 p-3 space-y-3" aria-label="AI avatar studio">
+            <div><p className="font-semibold text-sm">AI Avatar Studio</p><p className="text-xs text-slate-400">Generate your own character or optionally transform a selfie. A selfie is sent to an external image provider only when you press Generate.</p></div>
+            <label className="field-label">Avatar look
+              <select className="field" value={aiStyle} onChange={(e) => setAiStyle(e.target.value)}>
+                <option value="cinematic">Cinematic portrait</option>
+                <option value="anime">Anime art</option>
+                <option value="clay">3D clay</option>
+                <option value="neon">Neon futuristic</option>
+                <option value="editorial">Editorial fashion</option>
+              </select>
+            </label>
+            <label className="field-label">Your avatar idea (optional)
+              <input className="field" maxLength={240} value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)} placeholder="Colors, hair, expression, background…" />
+            </label>
+            <label className="field-label">Photo reference (optional, max 5 MB)
+              <input className="field" type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => {
+                const file=e.target.files?.[0];
+                if (file && file.size > 5*1024*1024) { setError('Use a photo smaller than 5 MB'); e.target.value=''; return; }
+                setAiPhoto(file || null);
+              }} />
+            </label>
+            <button type="button" className="btn-secondary w-full" disabled={aiBusy || busy} onClick={generateAiAvatar}>{aiBusy ? 'Creating AI avatar…' : 'Generate AI avatar'}</button>
+            <p className="text-[11px] text-slate-400">Preview appears above. Press Save profile to apply it. Requires configured image API access and may incur provider costs.</p>
+          </section>
+          <label className="field-label">Your profile colour
+            <input type="color" value={avatarColor} className="h-11 w-full cursor-pointer rounded-lg"
+              onChange={(e) => setAvatarColor(e.target.value)} />
+          </label>
           <label className="field-label">
             Display name
             <input
@@ -157,6 +242,7 @@ export default function FeatureDialog({
           >
             App lock
           </button>
+          <button type="button" className="btn-secondary w-full" onClick={() => onFeature('device_link')}>Link another device</button>
           <button type="button" className="btn-secondary w-full" onClick={() => onFeature('theme')}>
             Change appearance
           </button>
@@ -222,7 +308,7 @@ export default function FeatureDialog({
                     )
                   }
                 />
-                <Avatar name={u.name} size={36} />
+                <Avatar name={u.name} size={36} src={u.avatarUrl} color={u.avatarColor} variant={u.avatarStyle} focus={u.avatarFocus} />
                 <span>
                   {u.name}
                   <small className="block text-slate-500">{u.phone}</small>
@@ -235,7 +321,7 @@ export default function FeatureDialog({
       {dialog.type === 'contact' && (
         <>
           <div className="flex flex-col items-center gap-2">
-            <Avatar name={group?.name || user.name} size={80} />
+            <Avatar name={group?.name || user.name} size={80} src={user.avatarUrl} color={user.avatarColor} variant={user.avatarStyle} focus={user.avatarFocus} />
             <h3 className="text-xl font-semibold">{group?.name || user.name}</h3>
             <p className="text-sm text-slate-400">
               {group ? `${group.members.length} members` : user.phone}
@@ -447,7 +533,7 @@ export default function FeatureDialog({
                 className="w-full flex items-center gap-3 p-2 rounded-xl hover:bg-white/5"
                 onClick={() => run(() => onForward(u, dialog.messages || [dialog.message]))}
               >
-                <Avatar name={u.name} size={36} />
+                <Avatar name={u.name} size={36} src={u.avatarUrl} color={u.avatarColor} variant={u.avatarStyle} focus={u.avatarFocus} />
                 <span className="text-left flex-1">
                   {u.phone === me.phone ? 'Message yourself' : u.name}
                   {u.isGroup && <small className="block text-slate-500">Group</small>}

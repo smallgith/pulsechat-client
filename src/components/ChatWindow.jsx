@@ -341,11 +341,11 @@ export default function ChatWindow({
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto scroll-thin px-2 sm:px-4 md:px-8 py-4 sm:py-5">
-        <div className="max-w-3xl mx-auto">
+      <div className="flex-1 overflow-y-auto scroll-thin px-2 sm:px-4 md:px-5 py-2 sm:py-3">
+        <div className="max-w-5xl mx-auto">
           {groups.map((g) => (
             <div key={g.label}>
-              <div className="flex justify-center my-4 sm:my-5">
+              <div className="flex justify-center my-2 sm:my-3">
                 <span className="px-3.5 py-1 rounded-full text-[11px] font-medium text-slate-400 bg-white/[0.06] border border-white/5">
                   {g.label}
                 </span>

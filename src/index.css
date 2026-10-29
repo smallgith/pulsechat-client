@@ -76,6 +76,43 @@
   --chat: #f7f9f0;
 }
 
+
+/* Additional light presets. Custom starts with Daylight and overrides selected variables. */
+[data-theme='ocean'] {
+  color-scheme:light;
+  --ink-900:239 248 252; --ink-800:255 255 255; --ink-700:219 235 247;
+  --ink-600:255 255 255; --ink-500:191 218 231;
+  --brand-400:0 132 160; --brand-500:0 112 151; --brand-600:4 92 137;
+  --text-100:24 49 69; --text-200:42 66 79; --text-300:74 98 115;
+  --text-400:113 132 146; --text-500:139 157 170;
+  --border:#dceaf1; --surface:#fff; --shell:#e9f4f9; --soft:#edf7fb;
+  --rail:#102e45; --accent-soft:#e3f5fc; --shadow:0 6px 24px #1763800d; --chat:#f6fcff;
+}
+[data-theme='blush'] {
+  color-scheme:light;
+  --ink-900:251 244 247; --ink-800:255 255 255; --ink-700:246 229 238;
+  --ink-600:255 255 255; --ink-500:230 205 219;
+  --brand-400:185 73 125; --brand-500:161 61 109; --brand-600:134 45 94;
+  --text-100:63 37 57; --text-200:83 54 71; --text-300:107 81 97;
+  --text-400:145 117 133; --text-500:164 145 156;
+  --border:#efdfeb; --surface:#fff; --shell:#f6eaf2; --soft:#fdf2f8;
+  --rail:#392336; --accent-soft:#fbe2ef; --shadow:0 6px 24px #a119570a; --chat:#fff9fc;
+}
+[data-theme='custom'] {
+  color-scheme:light;
+  --ink-900:246 244 249; --ink-800:255 255 255; --ink-700:240 236 246;
+  --ink-600:255 255 255; --ink-500:220 214 232;
+  --brand-400:112 79 204; --brand-500:120 84 218; --brand-600:101 64 193;
+  --text-100:41 35 61; --text-200:60 52 79; --text-300:90 81 108;
+  --text-400:122 114 140; --text-500:150 142 166;
+  --border:#e9e4ef; --surface:#fff; --shell:#ede9f2; --soft:#f5f2fa;
+  --rail:#292039; --accent-soft:#eee7fc; --shadow:0 6px 24px #3c285608;
+  --chat:#faf8fc;
+}
+.theme-preview.ocean {background:linear-gradient(130deg,#d7f2fd 50%,#056184 51%)}
+.theme-preview.blush {background:linear-gradient(130deg,#fff1f6 50%,#a13d6d 51%)}
+.theme-preview.custom {background:conic-gradient(#79bff4,#f28ebd,#59c58e,#8e6aef,#79bff4)}
+
 @layer components {
   .field {
     @apply w-full rounded-xl border border-white/10 bg-ink-900/80 px-3 py-2.5 text-slate-100 placeholder-slate-500 outline-none focus:border-brand-500/60;
@@ -210,7 +247,10 @@ a:focus-visible {
   border-color: var(--border);
 }
 [data-theme='daylight'] .bg-white\/5,
-[data-theme='sage'] .bg-white\/5 {
+[data-theme='sage'] .bg-white\/5,
+[data-theme='ocean'] .bg-white\/5,
+[data-theme='blush'] .bg-white\/5,
+[data-theme='custom'] .bg-white\/5 {
   background-color: var(--soft);
 }
 .app-shell {
@@ -1707,3 +1747,23 @@ a:focus-visible {
     font-size: 10px;
   }
 }
+
+/* Compact, touch-friendly audio notes. No browser-owned audio UI. */
+.voice-note { display:flex; align-items:center; gap:10px; width: min(78vw, 292px); max-width:100%; padding:8px 9px; min-height:62px; }
+.voice-play { flex:0 0 37px; height:37px; border-radius:50%; background:rgb(var(--brand-500)/.14); color:rgb(var(--brand-500)); display:grid; place-items:center; }
+.voice-note-mine .voice-play { background:rgb(255 255 255/.21); color:#fff; }
+.voice-timeline { position:relative; flex:1; min-width:0; }
+.voice-bars { height:29px; display:flex; align-items:center; gap:2px; overflow:hidden; }
+.voice-bars span { flex:1; max-width:4px; min-width:2px; border-radius:3px; background:currentColor; transition:opacity .13s; }
+.voice-range { position:absolute; inset:-3px 0 auto 0; width:100%; height:35px; opacity:0; cursor:pointer; }
+.voice-range:focus-visible { opacity:1; height:6px; top:12px; outline:2px solid currentColor; }
+.voice-foot { display:flex; justify-content:space-between; gap:8px; font-size:10px; opacity:.76; margin-top:3px; font-variant-numeric:tabular-nums; }
+.voice-speed { flex:0 0 35px; border-radius:9px; border:1px solid currentColor; opacity:.83; padding:4px 2px; font-size:11px; font-weight:700; }
+.voice-error { color:#d97706; }
+.message-bubble { box-shadow:0 2px 9px rgba(35,23,55,.04); }
+@media (hover:none) { .message-bubble { -webkit-touch-callout:none; } }
+
+.install-nudge { position:fixed; right:16px; bottom:16px; z-index:70; display:flex; gap:10px; align-items:center; width:min(420px,calc(100vw - 24px)); padding:13px; border:1px solid var(--border); border-radius:18px; background:var(--surface); color:rgb(var(--text-100)); box-shadow:0 14px 45px #1d173b21; }
+.install-nudge-icon { width:40px; height:40px; border-radius:13px; display:grid; place-items:center; background:var(--accent-soft); color:rgb(var(--brand-500)); flex-shrink:0; }
+@media(max-width:767px){ .install-nudge { bottom:12px; right:12px; } }
+@media(prefers-reduced-motion:reduce){ .message-bubble, .voice-bars span { animation:none !important; transition:none !important; } }

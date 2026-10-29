@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar';
 import ChatWindow from './components/ChatWindow';
 import Toast from './components/Toast';
 import NotificationPrompt from './components/NotificationPrompt';
+import InstallAppPrompt from './components/InstallAppPrompt';
 import CallModal from './components/CallModal';
 import ConfirmDialog from './components/ConfirmDialog';
 import FeatureDialog from './components/FeatureDialog';
@@ -19,6 +20,7 @@ import { shortPreview } from './lib/format';
 import { enablePush } from './lib/push';
 import WorkDialog, { workDialogTypes } from './components/WorkDialog';
 import AppLock from './components/AppLock';
+import DeviceLinkApproval from './components/DeviceLinkApproval';
 import { useAppLock } from './hooks/useAppLock';
 
 const USER_KEY = 'pulsechat.user';
@@ -59,6 +61,10 @@ export default function Messenger() {
     [reports, setReports] = useState([]);
   const [scheduledDraft, setScheduledDraft] = useState(null);
   const [theme, setTheme] = useState(() => localStorage.getItem('pulsechat.theme') || 'daylight');
+  const [customTheme, setCustomTheme] = useState(() => {
+    try { return { accent: '#7050cc', chat: '#f8f6fc', ...JSON.parse(localStorage.getItem('pulsechat.customTheme') || '{}') }; }
+    catch { return { accent: '#7050cc', chat: '#f8f6fc' }; }
+  });
   const [, refreshClock] = useState(0);
   const [typing, setTyping] = useState({});
   const [toast, setToast] = useState(null),
@@ -93,10 +99,22 @@ export default function Messenger() {
     toastTimer.current = setTimeout(() => setToast(null), 5000);
   }, []);
   useEffect(() => {
-    const value = ['daylight', 'midnight', 'sage'].includes(theme) ? theme : 'daylight';
+    const value = ['daylight', 'midnight', 'sage', 'ocean', 'blush', 'custom'].includes(theme) ? theme : 'daylight';
     document.documentElement.dataset.theme = value;
     localStorage.setItem('pulsechat.theme', value);
-  }, [theme]);
+    localStorage.setItem('pulsechat.customTheme', JSON.stringify(customTheme));
+    const hexToRgb = (hex) => hex.match(/[a-f\d]{2}/gi).map((v) => parseInt(v, 16));
+    if (value === 'custom') {
+      const [r, g, b] = hexToRgb(customTheme.accent);
+      document.documentElement.style.setProperty('--brand-400', `${Math.min(255, r + 28)} ${Math.min(255, g + 28)} ${Math.min(255, b + 28)}`);
+      document.documentElement.style.setProperty('--brand-500', `${r} ${g} ${b}`);
+      document.documentElement.style.setProperty('--brand-600', `${Math.round(r * .86)} ${Math.round(g * .86)} ${Math.round(b * .86)}`);
+      document.documentElement.style.setProperty('--chat', customTheme.chat);
+      document.documentElement.style.setProperty('--chat-custom', customTheme.chat);
+    } else {
+      ['--brand-400', '--brand-500', '--brand-600', '--chat'].forEach((key) => document.documentElement.style.removeProperty(key));
+    }
+  }, [theme, customTheme]);
   useEffect(() => {
     const remaining = preferences.focusUntil - Date.now();
     if (remaining > 0) {
@@ -115,14 +133,25 @@ export default function Messenger() {
   useEffect(() => {
     const shortcut = (e) => {
       if (!me || lock.locked) return;
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      const mod = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+      if (mod && key === 'k') { e.preventDefault(); setDialog({ type: 'command' }); }
+      else if (mod && key === '/') { e.preventDefault(); setDialog({ type: 'shortcuts' }); }
+      else if (mod && e.shiftKey && key === 'n') { e.preventDefault(); setDialog({ type: 'group_create' }); }
+      else if (mod && e.shiftKey && key === 'l') { e.preventDefault(); if (!callRef.current) lock.lock(); }
+      else if (e.key === 'Escape') setDialog(null);
+      else if (e.altKey && ['arrowup', 'arrowdown'].includes(key) && !/input|textarea|select/i.test(e.target?.tagName || '')) {
         e.preventDefault();
-        setDialog({ type: 'command' });
+        const all = [...latest.current.users, ...latest.current.groups].filter((u) => u.phone !== latest.current.me?.phone);
+        if (all.length) {
+          const index = all.findIndex((u) => u.phone === latest.current.selectedId);
+          setSelectedId(all[(index + (key === 'arrowdown' ? 1 : -1) + all.length) % all.length].phone);
+        }
       }
     };
     document.addEventListener('keydown', shortcut);
     return () => document.removeEventListener('keydown', shortcut);
-  }, [me?.phone, lock.locked]);
+  }, [me?.phone, lock.locked, lock.lock]);
   const request = useCallback((event, payload, wait = true) => {
     const socket = socketRef.current;
     if (!socket?.connected)
@@ -182,7 +211,13 @@ export default function Messenger() {
     socketRef.current = socket;
     const updateMessage = (msg) =>
       setConversations((p) => ({ ...p, [msg.roomId]: merge(p[msg.roomId], [msg]) }));
+    const reportVisibility = () => socket.connected && socket.emit('client_visibility', { visible: document.visibilityState === 'visible' && document.hasFocus() });
+    const visibilityPulse = setInterval(reportVisibility, 25000);
+    document.addEventListener('visibilitychange', reportVisibility);
+    window.addEventListener('focus', reportVisibility);
+    window.addEventListener('blur', reportVisibility);
     socket.on('connect', () => {
+      reportVisibility();
       socket.timeout(15000).emit('register', { token: me.token, name: me.name }, (err, res) => {
         if (err) {
           setConnected(false);
@@ -208,6 +243,7 @@ export default function Messenger() {
         setStatuses(res.statuses || []);
         setCalls(res.calls || []);
         setConnected(true);
+        reportVisibility();
         setScheduled(res.scheduled || []);
         setReports(res.reports || []);
         if (typeof Notification !== 'undefined' && Notification.permission === 'granted')
@@ -217,11 +253,14 @@ export default function Messenger() {
           localStorage.setItem(USER_KEY, JSON.stringify(next));
           return next;
         });
-        const queryPhone = new URLSearchParams(window.location.search).get('chat');
-        if (queryPhone && [...res.users, ...res.groups].some((u) => u.phone === queryPhone))
+        const query = new URLSearchParams(window.location.search);
+        const queryPhone = query.get('chat');
+        if (queryPhone && [...res.users, ...res.groups].some((u) => u.phone === queryPhone)) {
           setSelectedId(queryPhone);
-        if (new URLSearchParams(window.location.search).get('invite'))
-          setDialog({ type: 'invite' });
+          // The reply flag remains in the URL until the app is unlocked and ready.
+        }
+        if (query.get('invite')) setDialog({ type: 'invite' });
+        else if (query.get('compose') === '1') setDialog({ type: 'command' });
       });
     });
     socket.on('disconnect', () => {
@@ -311,6 +350,7 @@ export default function Messenger() {
         );
     });
     socket.on('incoming_call', (data) => {
+      if (callRef.current?.callId === data.callId) return;
       if (callRef.current) {
         socket.emit('call_reject', { callId: data.callId });
         return;
@@ -359,6 +399,10 @@ export default function Messenger() {
         if (reason === 'interrupted') notice('Call ended because the connection was lost.');
       });
     return () => {
+      clearInterval(visibilityPulse);
+      document.removeEventListener('visibilitychange', reportVisibility);
+      window.removeEventListener('focus', reportVisibility);
+      window.removeEventListener('blur', reportVisibility);
       socket.disconnect();
       socketRef.current = null;
       endCall(true);
@@ -448,12 +492,28 @@ export default function Messenger() {
   }, [activeMessages, selectedId, connected, me?.phone, lock.locked]);
   useEffect(() => {
     const handler = (e) => {
-      if (e.data?.type === 'OPEN_CHAT' && /^(\d{10}|group:[a-f0-9-]{36})$/.test(e.data.chat || ''))
+      if (e.data?.type === 'OPEN_CHAT' && /^(\d{10}|group:[a-f0-9-]{36})$/.test(e.data.chat || '')) {
         setSelectedId(e.data.chat);
+        if (e.data.reply) setTimeout(() => document.querySelector('[data-message-composer]')?.focus(), 200);
+      }
     };
     navigator.serviceWorker?.addEventListener('message', handler);
     return () => navigator.serviceWorker?.removeEventListener('message', handler);
   }, []);
+
+  useEffect(() => {
+    if (!selectedId || lock.locked) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('reply') !== '1' || url.searchParams.get('chat') !== selectedId) return;
+    const timer = setTimeout(() => {
+      const composer = document.querySelector('[data-message-composer]');
+      if (!composer) return;
+      composer.focus();
+      url.searchParams.delete('reply');
+      window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [selectedId, lock.locked]);
 
   const sendTo = async (targetId, payload) => {
     const { files, ...rest } = payload;
@@ -575,7 +635,7 @@ export default function Messenger() {
       notice('End your current call first');
       return;
     }
-    if (!connected || !target.online || preferences.blocked.includes(target.phone)) {
+    if (!connected || preferences.blocked.includes(target.phone)) {
       notice('This contact is unavailable for a call');
       return;
     }
@@ -779,6 +839,7 @@ export default function Messenger() {
         onReply={(text) => sendTo(toast.targetId, { text }).catch((e) => notice(e.message))}
       />
       <NotificationPrompt />
+      <InstallAppPrompt />
       {call && (
         <CallModal
           key={call.callId}
@@ -795,6 +856,7 @@ export default function Messenger() {
         />
       )}
       {dialog?.type === 'security' && <AppLock lock={lock} onClose={() => setDialog(null)} />}
+      {dialog?.type === 'device_link' && <DeviceLinkApproval onClose={() => setDialog(null)} />}
       {dialog && workDialogTypes.includes(dialog.type) && (
         <WorkDialog
           key={`${dialog.type}/${dialog.user?.phone || ''}/${dialog.message?.id || ''}`}
@@ -826,10 +888,12 @@ export default function Messenger() {
           }
           theme={theme}
           setTheme={setTheme}
+          customTheme={customTheme}
+          setCustomTheme={setCustomTheme}
           onFeature={openFeature}
         />
       )}
-      {dialog && !workDialogTypes.includes(dialog.type) && dialog.type !== 'security' && (
+      {dialog && !workDialogTypes.includes(dialog.type) && dialog.type !== 'security' && dialog.type !== 'device_link' && (
         <FeatureDialog
           key={`${dialog.type}/${dialog.message?.id || dialog.user?.phone || ''}`}
           dialog={dialog}

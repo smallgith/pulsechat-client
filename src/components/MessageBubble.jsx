@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Check,
   CheckCheck,
@@ -9,7 +9,6 @@ import {
   Copy,
   Reply,
   Smile,
-  MoreVertical,
   Star,
   Pencil,
   Forward,
@@ -18,6 +17,7 @@ import {
 } from 'lucide-react';
 import { formatTime, formatBytes } from '../lib/format';
 import WorkCards from './WorkCards';
+import VoiceNotePlayer from './VoiceNotePlayer';
 
 function Ticks({ status }) {
   if (status === 'seen') return <CheckCheck className="w-3.5 h-3.5 text-sky-400" />;
@@ -48,6 +48,8 @@ export default function MessageBubble({
   const [reactOpen, setReactOpen] = useState(false);
   const [ctx, setCtx] = useState({ open: false, x: 0, y: 0 });
   const [copyError, setCopyError] = useState('');
+  const pressTimer = useRef(null);
+  const pressStart = useRef(null);
   useEffect(() => {
     if (!ctx.open) return;
     const close = (e) => {
@@ -95,35 +97,27 @@ export default function MessageBubble({
   return (
     <>
       <div
-        className={`flex ${reactionEmojis.length ? 'mb-5' : 'mb-1.5'} animate-fade-up ${mine ? 'justify-end' : 'justify-start'}`}
+        className={`flex ${reactionEmojis.length ? 'mb-4' : 'mb-1'} animate-fade-up ${mine ? 'justify-end' : 'justify-start'}`}
       >
         <div
           onContextMenu={onContext}
-          className={`message-bubble group relative max-w-[88%] sm:max-w-[75%] lg:max-w-[65%] rounded-2xl px-1.5 pt-1.5 pb-1 transition ${mine ? 'bubble-mine' : 'bubble-theirs'}
+          onTouchStart={(e) => { const t = e.touches[0]; pressStart.current = { x: t.clientX, y: t.clientY }; clearTimeout(pressTimer.current); pressTimer.current = setTimeout(() => onContext({ preventDefault() {}, clientX: pressStart.current.x, clientY: pressStart.current.y }), 550); }}
+          onTouchMove={(e) => { if (pressStart.current && Math.hypot(e.touches[0].clientX - pressStart.current.x, e.touches[0].clientY - pressStart.current.y) > 12) clearTimeout(pressTimer.current); }}
+          onTouchEnd={() => clearTimeout(pressTimer.current)}
+          onTouchCancel={() => clearTimeout(pressTimer.current)}
+          className={`message-bubble group relative max-w-[88%] sm:max-w-[75%] lg:max-w-[65%] rounded-xl px-1.5 pt-1 pb-1 transition ${mine ? 'bubble-mine' : 'bubble-theirs'}
             ${
               mine
                 ? 'bg-gradient-to-br from-brand-600 to-emerald-700 rounded-br-md'
                 : 'bg-ink-600/90 border border-white/5 rounded-bl-md'
             }`}
         >
-          <div className="flex items-center gap-3 px-2 pt-0.5 text-[10px]">
-            <span className="flex-1 min-w-0 truncate text-brand-200">
-              {showName ? message.fromName : ''}
-              {message.forwarded && (
-                <i className="text-white/60">{showName ? ' · ' : ''}Forwarded</i>
-              )}
-            </span>
-            <button
-              aria-label="Message options"
-              onClick={(e) => {
-                const r = e.currentTarget.getBoundingClientRect();
-                onContext({ preventDefault() {}, clientX: r.left, clientY: r.bottom });
-              }}
-              className="p-1 rounded hover:bg-black/20 text-white/60"
-            >
-              <MoreVertical size={13} />
-            </button>
-          </div>
+          {(showName || message.forwarded) && (
+            <div className="flex items-center gap-2 px-2 pt-0.5 text-[10px]">
+              {showName && <span className="font-semibold">{message.fromName}</span>}
+              {message.forwarded && <i className="opacity-70">Forwarded</i>}
+            </div>
+          )}
           {/* reply preview */}
           {message.replyTo && (
             <div
@@ -180,12 +174,7 @@ export default function MessageBubble({
 
           {/* voice */}
           {voice && (
-            <div className="px-2.5 py-2 min-w-[220px]">
-              <audio controls src={voice.url} className="w-full" style={{ height: 36 }} />
-              <p className="text-[10px] opacity-70 mt-0.5">
-                {voice.duration ? `${voice.duration}s` : ''}
-              </p>
-            </div>
+            <VoiceNotePlayer src={voice.url} duration={voice.duration} mine={mine} />
           )}
 
           {/* generic file */}

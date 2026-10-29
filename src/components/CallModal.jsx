@@ -104,15 +104,11 @@ export default function CallModal({
         );
         if (!alive) return;
         setOutputs(list);
-        if (!didSetDefault.current && localStream && canRoute) {
+        if (!didSetDefault.current && localStream) {
           didSetDefault.current = true;
-          // Prefer an actual communications/headset device. Never emulate routing with volume.
-          const preferred =
-            list.find((d) => d.deviceId === 'communications') ||
-            list.find((d) =>
-              /earpiece|headset|headphone|earphone|airpods|bluetooth/i.test(d.label)
-            );
-          await route(preferred?.deviceId || '');
+          // The audio element starts on the system's default route. Only user gestures
+          // may switch the output explicitly; no forced speaker/headset selection.
+          setOutput('');
         }
       } catch {
         /* System routing remains available. */

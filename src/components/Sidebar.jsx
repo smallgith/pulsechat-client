@@ -20,6 +20,7 @@ import {
   CheckCheck,
   LockKeyhole,
   Palette,
+  Keyboard,
   Link2,
   ListFilter,
   Layers,
@@ -93,7 +94,9 @@ export default function Sidebar({
     ['invite', 'Join via invite link', Link2],
     ['lists', 'Your chat lists', Layers],
     ['security', 'App lock', LockKeyhole],
+    ['device_link', 'Link another device', Link2],
     ['theme', 'Appearance', Palette],
+    ['shortcuts', 'Keyboard shortcuts', Keyboard],
     ['logout', 'Log out', LogOut],
   ];
   return (
@@ -131,6 +134,7 @@ export default function Sidebar({
           ))}
         </div>
         <div className="rail-bottom">
+          <button className="rail-button" title="Keyboard shortcuts" aria-label="Keyboard shortcuts" onClick={() => onFeature('shortcuts')}><Keyboard size={19} /></button>
           <button
             className="rail-button"
             title="Appearance"
@@ -148,7 +152,7 @@ export default function Sidebar({
             <LockKeyhole size={20} />
           </button>
           <button onClick={() => onFeature('profile')} aria-label="Edit profile" title={me.name}>
-            <Avatar name={me.name} size={36} online={connected} />
+            <Avatar name={me.name} size={36} online={connected} src={me.avatarUrl} color={me.avatarColor} variant={me.avatarStyle} focus={me.avatarFocus} />
           </button>
         </div>
       </nav>
@@ -342,7 +346,7 @@ export default function Sidebar({
                   className={`chat-list-item ${selected?.phone === u.phone ? 'active' : ''}`}
                 >
                   <div className="relative">
-                    <Avatar name={u.name} size={45} online={!u.isGroup && !u.isSelf && u.online} />
+                    <Avatar name={u.name} size={45} online={!u.isGroup && !u.isSelf && u.online} src={u.avatarUrl} color={u.avatarColor} variant={u.avatarStyle} focus={u.avatarFocus} />
                     {u.isGroup && (
                       <span className="group-avatar-badge">
                         <Users size={11} />
@@ -380,7 +384,7 @@ export default function Sidebar({
         </div>
         <footer className="inbox-footer">
           <button className="profile-summary" onClick={() => onFeature('profile')}>
-            <Avatar name={me.name} size={31} />
+            <Avatar name={me.name} size={31} src={me.avatarUrl} color={me.avatarColor} variant={me.avatarStyle} focus={me.avatarFocus} />
             <span>
               {me.name}
               <small>Your personal space</small>
