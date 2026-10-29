@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { LockKeyhole, ArrowUpRight, ShieldCheck } from 'lucide-react';
 import Modal from './Modal';
+import GoogleSignInButton from './GoogleSignInButton';
 import { authHeaders, SOCKET_URL } from '../lib/socket';
 
 export default function AppLock({ lock, onClose, onLogout }) {
@@ -9,6 +10,17 @@ export default function AppLock({ lock, onClose, onLogout }) {
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
   const [resetting, setResetting] = useState(false), [code, setCode] = useState(''), [sent, setSent] = useState(false), [hint, setHint] = useState('');
+  const current = (() => { try { return JSON.parse(localStorage.getItem('pulsechat.user') || '{}'); } catch { return {}; } })();
+  const [authMode, setAuthMode] = useState('sms');
+  const [googleClientId, setGoogleClientId] = useState('');
+  const usesGoogle = !!current.phone?.startsWith('google:') || authMode === 'google';
+  const [googleCredential, setGoogleCredential] = useState('');
+  useEffect(() => {
+    fetch(`${SOCKET_URL}/api/config`).then((r) => r.json()).then((data) => {
+      setGoogleClientId(data.googleClientId || '');
+      setAuthMode(data.authMode || 'sms');
+    }).catch(() => {});
+  }, []);
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
@@ -17,7 +29,8 @@ export default function AppLock({ lock, onClose, onLogout }) {
       if (lock.locked && resetting) {
         if (pin !== confirm) throw new Error('The PINs do not match.');
         const token = authHeaders().Authorization?.replace(/^Bearer /, '');
-        await lock.resetPin(code, pin, token);
+        if (usesGoogle && !googleCredential) throw new Error('Verify your Google account first.');
+        await lock.resetPin(usesGoogle ? googleCredential : code, pin, token);
         setResetting(false);
       } else if (lock.locked) await lock.unlock(pin);
       else if (lock.enabled) {
@@ -52,7 +65,7 @@ export default function AppLock({ lock, onClose, onLogout }) {
         </h3>
         <p className="text-sm text-slate-400 mt-2">
           {lock.locked && resetting
-            ? 'Confirm ownership with the one-time code sent to your registered phone.'
+            ? usesGoogle ? 'Confirm your Google identity before selecting a new PIN.' : 'Confirm ownership with the one-time code sent to your registered phone.'
             : lock.locked
             ? 'Enter your PIN to return to your conversations.'
             : 'A screen lock for this browser. Locks after 5 minutes of inactivity and whenever you reopen the app.'}
@@ -63,7 +76,13 @@ export default function AppLock({ lock, onClose, onLogout }) {
           {error}
         </p>
       )}
-      {lock.locked && resetting && (
+      {lock.locked && resetting && usesGoogle && (
+        <div className="space-y-3">
+          <GoogleSignInButton clientId={googleClientId} onCredential={setGoogleCredential} onError={(e) => setError(e.message)} disabled={busy} />
+          {googleCredential && <p className="text-xs text-brand-400">Google account verified. Set your new PIN.</p>}
+        </div>
+      )}
+      {lock.locked && resetting && !usesGoogle && (
         <div className="space-y-3">
           <button type="button" className="btn-secondary w-full" disabled={busy}
             onClick={async () => {
@@ -141,7 +160,7 @@ export default function AppLock({ lock, onClose, onLogout }) {
       {lock.locked ? (
         <div className="space-y-2">
           {lock.wrongAttempts >= 3 && <button type="button" className="btn-secondary w-full" onClick={() => { setResetting(!resetting); setError(''); }}>
-            {resetting ? 'Use existing PIN' : 'Forgot PIN? Verify phone and create a new PIN'}
+            {resetting ? 'Use existing PIN' : usesGoogle ? 'Forgot PIN? Verify Google account and reset' : 'Forgot PIN? Verify phone and reset'}
           </button>}
           <button type="button" className="text-xs text-slate-400 w-full" onClick={onLogout}>
             Log out and sign in again

@@ -7,7 +7,8 @@ import { getPermission, requestPermission } from '../lib/notification';
 import { enablePush } from '../lib/push';
 import GroupTools from './GroupTools';
 import CameraCapture from './CameraCapture';
-import { uploadFile, SOCKET_URL } from '../lib/socket';
+import { uploadFile, SOCKET_URL, authHeaders } from '../lib/socket';
+import GoogleSignInButton from './GoogleSignInButton';
 
 export default function FeatureDialog({
   dialog,
@@ -70,6 +71,24 @@ export default function FeatureDialog({
     [error, setError] = useState('');
   const [viewing, setViewing] = useState(null);
   const [notificationResult, setNotificationResult] = useState('');
+  const [googleClientId, setGoogleClientId] = useState('');
+  const [googleLinkDone, setGoogleLinkDone] = useState(false);
+  useEffect(() => {
+    if (dialog.type !== 'profile' || me.phone.startsWith('google:')) return;
+    fetch(`${SOCKET_URL}/api/config`).then((r) => r.json()).then((config) => setGoogleClientId(config.googleClientId || '')).catch(() => {});
+  }, [dialog.type, me.phone]);
+  const linkGoogle = async (credential) => {
+    setBusy(true); setError('');
+    try {
+      const response = await fetch(`${SOCKET_URL}/api/auth/google/link`, { method:'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ credential }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || 'Could not link Google account');
+      setGoogleLinkDone(true);
+    } catch(e) { setError(e.message); } finally { setBusy(false); }
+  };
   const user = dialog.user;
   const group = groups.find((g) => g.phone === user?.phone);
   const contacts = users.filter((u) => u.phone !== me.phone);
@@ -133,7 +152,12 @@ export default function FeatureDialog({
           <div className="flex justify-center">
             <Avatar name={name} size={80} src={avatarUrl} color={avatarColor} variant={avatarStyle} />
           </div>
-          <p className="text-center text-slate-400 text-sm">{me.phone}</p>
+          <p className="text-center text-slate-400 text-sm">{me.phone.startsWith('google:') ? 'Google account' : me.phone}</p>
+          {googleClientId && !me.phone.startsWith('google:') && <div className="border border-white/10 rounded-xl p-3 space-y-2">
+            <p className="text-xs text-slate-400 text-center">Link Google to keep this account and chats without SMS fees.</p>
+            {googleLinkDone ? <p className="text-xs text-brand-400 text-center">Google account linked. You can now sign in for free.</p> :
+              <GoogleSignInButton clientId={googleClientId} onCredential={linkGoogle} onError={(e) => setError(e.message)} disabled={busy} />}
+          </div>}
           <div className="flex gap-2 justify-center flex-wrap">
             <label className="btn-secondary cursor-pointer">Upload photo
               <input className="sr-only" type="file" accept="image/*" disabled={busy}

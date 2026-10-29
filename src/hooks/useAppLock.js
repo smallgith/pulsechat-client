@@ -82,7 +82,7 @@ export function useAppLock(phone, suspended = false) {
     if (!/^\d{6,8}$/.test(newPin)) throw new Error('Choose a 6–8 digit PIN.');
     const response = await fetch(`${import.meta.env.VITE_SOCKET_URL || `${location.protocol}//${location.hostname}:5000`}/api/lock-reset`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ otp }),
+      body: JSON.stringify(phone.startsWith('google:') ? { googleCredential: otp } : { otp }),
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Could not verify your identity');

@@ -9,6 +9,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import Avatar from './Avatar';
+import GoogleSignInButton from './GoogleSignInButton';
 import { SOCKET_URL } from '../lib/socket';
 
 export default function Login({ onJoin, error }) {
@@ -21,6 +22,9 @@ export default function Login({ onJoin, error }) {
   const [resendIn, setResendIn] = useState(0);
   const [demoAuth, setDemoAuth] = useState(false);
   const [token, setToken] = useState('');
+  const [googleClientId, setGoogleClientId] = useState('');
+  const [authMode, setAuthMode] = useState('sms');
+  const [authReady, setAuthReady] = useState(false);
   const [link, setLink] = useState(null);
   const [linkStatus, setLinkStatus] = useState('');
   const onJoinRef = useRef(onJoin);
@@ -30,6 +34,28 @@ export default function Login({ onJoin, error }) {
   const timerRef = useRef(null);
 
   useEffect(() => () => clearInterval(timerRef.current), []);
+  useEffect(() => {
+    let active = true;
+    fetch(`${SOCKET_URL}/api/config`).then((r) => r.json()).then((data) => {
+      if (!active) return;
+      setGoogleClientId(data.googleClientId || '');
+      setAuthMode(data.authMode || 'sms');
+    }).catch(() => { if (active) setLocalErr('Login server is unavailable. Try again shortly.'); })
+      .finally(() => { if (active) setAuthReady(true); });
+    return () => { active = false; };
+  }, []);
+  const signInGoogle = async (credential) => {
+    setLocalErr(''); setBusy(true);
+    try {
+      const response = await fetch(`${SOCKET_URL}/api/auth/google`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || 'Google Sign-In failed');
+      onJoinRef.current({ phone: data.user.phone, name: data.user.name, token: data.token });
+    } catch (err) { setLocalErr(err.message); } finally { setBusy(false); }
+  };
   useLayoutEffect(() => {
     if (step === 'otp') otpRefs.current[0]?.focus();
   }, [step]);
@@ -241,8 +267,9 @@ export default function Login({ onJoin, error }) {
           </div>
         </div>
 
+        {!authReady && <p className="text-center text-slate-400 text-sm py-4">Loading sign-in options…</p>}
         {/* steps */}
-        {step !== 'link' && <div className="flex items-center gap-2 mb-5 sm:mb-6">
+        {authReady && authMode !== 'google' && step !== 'link' && <div className="flex items-center gap-2 mb-5 sm:mb-6">
           {['phone', 'otp', 'name'].map((s, i) => {
             const done = i < stepIndex;
             const active = i === stepIndex;
@@ -271,7 +298,7 @@ export default function Login({ onJoin, error }) {
 
         }
         {/* PHONE */}
-        {step === 'phone' && (
+        {authReady && step === 'phone' && authMode !== 'google' && (
           <form onSubmit={sendOtp} className="space-y-4">
             <div>
               <label className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
@@ -314,7 +341,13 @@ export default function Login({ onJoin, error }) {
             </button>
           </form>
         )}
-        {step === 'phone' && <button type="button" className="btn-secondary w-full mt-4" disabled={busy} onClick={startDeviceLink}>Already signed in somewhere? Link this device</button>}
+        {authReady && step === 'phone' && googleClientId && <div className="mt-4 space-y-3">
+          {authMode !== 'google' && <p className="text-xs text-slate-400 text-center">Or sign in without SMS</p>}
+          <GoogleSignInButton clientId={googleClientId} onCredential={signInGoogle} onError={(e) => setLocalErr(e.message)} disabled={busy} />
+          {authMode === 'google' && <p className="text-xs text-slate-400 text-center">Free sign-in. No SMS or payment required.</p>}
+        </div>}
+        {authReady && step === 'phone' && authMode === 'google' && (localErr || error) && <p role="alert" className="error-banner mt-3">{localErr || error}</p>}
+        {authReady && step === 'phone' && <button type="button" className="btn-secondary w-full mt-4" disabled={busy} onClick={startDeviceLink}>Already signed in somewhere? Link this device</button>}
         {step === 'link' && <div className="space-y-4">
           <p className="text-sm text-slate-300">On your already signed-in device, open <strong>Profile → Link another device</strong>, then enter this 8-digit code.</p>
           <div className="p-5 rounded-2xl bg-brand-500/10 text-center border border-brand-500/30">
