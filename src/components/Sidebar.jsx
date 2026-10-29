@@ -1,31 +1,427 @@
-import { useMemo, useState } from 'react';
-import { Search, LogOut, Wifi, WifiOff, BellOff, Star, Plus, Users, Pin, CircleDot, Phone, Settings, ShieldCheck } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Search,
+  LogOut,
+  Wifi,
+  WifiOff,
+  BellOff,
+  Star,
+  Plus,
+  Users,
+  Pin,
+  CircleDot,
+  Phone,
+  Settings,
+  ShieldCheck,
+  MessagesSquare,
+  PanelsTopLeft,
+  Clock3,
+  MoreHorizontal,
+  CheckCheck,
+  LockKeyhole,
+  Palette,
+  Link2,
+  ListFilter,
+  Layers,
+  X,
+  Archive,
+} from 'lucide-react';
 import Avatar from './Avatar';
 import { shortPreview, formatTime } from '../lib/format';
 import { roomId } from '../lib/socket';
 
-export default function Sidebar({ me, users, selected, onSelect, lastMessages, unread, connected, onLogout, preferences: p, onFeature }) {
-  const [q, setQ] = useState(''), [tab, setTab] = useState('all');
-  const filtered = useMemo(() => users.filter((u) => {
-    const matches = `${u.name} ${u.phone} ${shortPreview(lastMessages[u.phone])}`.toLowerCase().includes(q.trim().toLowerCase());
-    if (!matches || (!q && p.hidden.includes(u.phone))) return false;
-    if (tab === 'archived') return p.archived.includes(u.phone);
-    if (p.archived.includes(u.phone) && !q) return false;
-    if (tab === 'unread') return unread[roomId(me.phone, u.phone)] > 0;
-    if (tab === 'groups') return u.isGroup;
-    if (tab === 'favorites') return p.favorites.includes(u.phone);
-    return true;
-  }).sort((a, b) => {
-    const pin = Number(p.pinned.includes(b.phone)) - Number(p.pinned.includes(a.phone));
-    return pin || new Date(lastMessages[b.phone]?.time || b.joinedAt || 0) - new Date(lastMessages[a.phone]?.time || a.joinedAt || 0);
-  }), [users, q, tab, p, unread, me.phone, lastMessages]);
-  const founder = users.find((u) => u.isFounder && u.phone !== me.phone);
-  return <aside className="w-full md:w-[350px] lg:w-[390px] shrink-0 flex flex-col glass border-r border-white/5">
-    <header className="flex items-center gap-3 px-4 py-4 border-b border-white/5"><button title="Edit profile" onClick={() => onFeature('profile')}><Avatar name={me.name} size={44} online={connected} /></button><div className="min-w-0 flex-1"><h2 className="font-semibold truncate">{me.name}</h2><p className="flex items-center gap-1.5 text-[11px] text-slate-400">{connected ? <><Wifi size={12} className="text-brand-400" />Connected</> : <><WifiOff size={12} className="text-amber-400" />Reconnecting…</>}</p></div><button aria-label="Edit profile" title="Edit profile" className="icon-btn" onClick={() => onFeature('profile')}><Settings size={18} /></button><button aria-label="Log out" title="Log out" className="icon-btn hover:text-red-400" onClick={onLogout}><LogOut size={18} /></button></header>
-    <div className="flex items-center gap-1 px-3 pt-3"><h1 className="text-xl font-bold tracking-tight flex-1 px-1">Chats</h1><button aria-label="Status updates" title="Status updates" className="icon-btn" onClick={() => onFeature('statuses')}><CircleDot size={20} /></button><button aria-label="Call history" title="Call history" className="icon-btn" onClick={() => onFeature('calls')}><Phone size={19} /></button><button aria-label="Starred messages" title="Starred messages" className="icon-btn" onClick={() => onFeature('starred')}><Star size={19} /></button><button aria-label="New group" title="New group" className="icon-btn text-brand-400" disabled={!connected} onClick={() => onFeature('group_create')}><Plus size={23} /></button></div>
-    <div className="px-4 py-3"><div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} /><input aria-label="Search chats" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search people, groups or messages" className="field !pl-9 !text-sm" /></div><div className="flex gap-1 mt-3 overflow-x-auto hide-scrollbar">{[['all', 'All'], ['unread', 'Unread'], ['groups', 'Groups'], ['favorites', 'Favourites'], ['archived', 'Archived']].map(([key, label]) => <button key={key} onClick={() => setTab(key)} className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap ${tab === key ? 'bg-brand-500/20 text-brand-400' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}>{label}</button>)}</div></div>
-    {founder && tab === 'all' && !q && <button className="mx-4 mb-3 p-3 rounded-xl border border-brand-500/20 bg-brand-500/5 flex items-center gap-3 text-left" onClick={() => onSelect(founder)}><ShieldCheck size={20} className="text-brand-400" /><div><p className="text-sm font-medium">Chat with the founder</p><p className="text-[11px] text-slate-400">Questions, ideas and feedback</p></div></button>}
-    <div className="flex-1 overflow-y-auto scroll-thin px-2 pb-3">{!filtered.length && <div className="px-4 py-12 text-center text-sm text-slate-500"><Users size={30} className="mx-auto mb-3 opacity-50" />{q ? 'No matching chats.' : tab === 'all' ? 'Welcome! Invite a friend to sign in, or message yourself to save a note.' : `No ${tab} chats.`}</div>}{filtered.map((u) => { const last = lastMessages[u.phone], count = unread[roomId(me.phone, u.phone)] || 0; return <button key={u.phone} onClick={() => onSelect(u)} className={`w-full flex items-center gap-3 px-3 py-3 rounded-2xl text-left border transition ${selected?.phone === u.phone ? 'bg-brand-500/15 border-brand-500/25' : 'border-transparent hover:bg-white/[0.04]'}`}><div className="relative"><Avatar name={u.name} size={48} online={!u.isGroup && !u.isSelf && u.online} />{u.isGroup && <span className="absolute -bottom-1 -right-1 p-1 rounded-full bg-ink-800 text-brand-400"><Users size={12} /></span>}</div><div className="min-w-0 flex-1"><div className="flex items-center gap-1.5"><span className="font-medium truncate flex-1">{u.name}</span>{p.favorites.includes(u.phone) && <Star size={12} className="text-yellow-400" />}{p.pinned.includes(u.phone) && <Pin size={12} className="text-slate-400" />}{p.muted.includes(u.phone) && <BellOff size={12} className="text-slate-500" />}{last && <span className={`text-[10px] shrink-0 ${count ? 'text-brand-400' : 'text-slate-500'}`}>{formatTime(last.time)}</span>}</div><div className="flex items-center gap-2 mt-1"><span className="text-xs text-slate-400 truncate flex-1">{p.blocked.includes(u.phone) ? 'Blocked contact' : shortPreview(last) || (u.isGroup ? `${u.members.length} members · Start a conversation` : u.isSelf ? 'Notes, links and reminders' : u.online ? 'Online · Say hello' : u.about || 'Offline')}</span>{count > 0 && <span className="min-w-5 h-5 px-1.5 rounded-full bg-brand-500 text-[11px] font-bold text-ink-900 flex items-center justify-center">{count > 99 ? '99+' : count}</span>}</div></div></button>; })}</div>
-    <footer className="px-4 py-2 border-t border-white/5 text-[10px] text-slate-500 flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-brand-500" />PulseChat · Your conversations, together.</footer>
-  </aside>;
+export default function Sidebar({
+  me,
+  users,
+  selected,
+  onSelect,
+  lastMessages,
+  unread,
+  connected,
+  onLogout,
+  preferences: p,
+  onFeature,
+  onBulk,
+  lockEnabled,
+}) {
+  const [q, setQ] = useState(''),
+    [tab, setTab] = useState('all'),
+    [menuOpen, setMenuOpen] = useState(false),
+    [selecting, setSelecting] = useState(false),
+    [checked, setChecked] = useState([]);
+  const menu = useRef();
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e) => {
+      if (!menu.current?.contains(e.target)) setMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [menuOpen]);
+  const filtered = useMemo(
+    () =>
+      users
+        .filter((u) => {
+          const matches = `${u.name} ${u.phone} ${shortPreview(lastMessages[u.phone])}`
+            .toLowerCase()
+            .includes(q.trim().toLowerCase());
+          if (!matches || (!q && p.hidden.includes(u.phone))) return false;
+          const list = (p.lists || []).find((l) => l.id === tab);
+          if (list) return list.chats.includes(u.phone);
+          if (tab === 'archived') return p.archived.includes(u.phone);
+          if (p.archived.includes(u.phone) && !q) return false;
+          if (tab === 'unread') return unread[roomId(me.phone, u.phone)] > 0;
+          if (tab === 'groups') return u.isGroup;
+          if (tab === 'favorites') return p.favorites.includes(u.phone);
+          return true;
+        })
+        .sort(
+          (a, b) =>
+            Number(p.pinned.includes(b.phone)) - Number(p.pinned.includes(a.phone)) ||
+            new Date(lastMessages[b.phone]?.time || b.joinedAt || 0) -
+              new Date(lastMessages[a.phone]?.time || a.joinedAt || 0)
+        ),
+    [users, q, tab, p, unread, me.phone, lastMessages]
+  );
+  const founder = users.find((u) => u.isFounder && u.phone !== me.phone),
+    total = Object.values(unread).reduce((a, b) => a + b, 0);
+  const actions = [
+    ['group_create', 'New group', Users],
+    ['starred', 'Starred messages', Star],
+    ['select', 'Select chats', ListFilter],
+    ['read', 'Mark all as read', CheckCheck],
+    ['invite', 'Join via invite link', Link2],
+    ['lists', 'Your chat lists', Layers],
+    ['security', 'App lock', LockKeyhole],
+    ['theme', 'Appearance', Palette],
+    ['logout', 'Log out', LogOut],
+  ];
+  return (
+    <aside className="inbox-shell">
+      <nav className="app-rail" aria-label="Workspace navigation">
+        <button className="pulse-mark" aria-label="PulseChat inbox" onClick={() => setTab('all')}>
+          <span>p</span>
+          <i />
+        </button>
+        <div className="rail-actions">
+          <button
+            className="rail-button active"
+            title="Conversations"
+            aria-label="Conversations"
+            onClick={() => setTab('all')}
+          >
+            <MessagesSquare size={21} />
+            {total > 0 && <i />}
+          </button>
+          {[
+            ['board', PanelsTopLeft, 'Workspace board'],
+            ['statuses', CircleDot, 'Status updates'],
+            ['calls', Phone, 'Call history'],
+            ['scheduled', Clock3, 'Scheduled messages'],
+          ].map(([key, Icon, label]) => (
+            <button
+              key={key}
+              title={label}
+              aria-label={label}
+              className="rail-button"
+              onClick={() => onFeature(key)}
+            >
+              <Icon size={21} />
+            </button>
+          ))}
+        </div>
+        <div className="rail-bottom">
+          <button
+            className="rail-button"
+            title="Appearance"
+            aria-label="Appearance"
+            onClick={() => onFeature('theme')}
+          >
+            <Palette size={21} />
+          </button>
+          <button
+            className="rail-button"
+            aria-label="App lock"
+            title={lockEnabled ? 'Lock workspace' : 'Set app lock'}
+            onClick={() => onFeature(lockEnabled ? 'lock_now' : 'security')}
+          >
+            <LockKeyhole size={20} />
+          </button>
+          <button onClick={() => onFeature('profile')} aria-label="Edit profile" title={me.name}>
+            <Avatar name={me.name} size={36} online={connected} />
+          </button>
+        </div>
+      </nav>
+      <div className="inbox-list">
+        <div className="inbox-brand">
+          <div className="mobile-mark pulse-mark">
+            <span>p</span>
+            <i />
+          </div>
+          <div>
+            <strong>
+              PulseChat<span> / </span>
+              <small>your everyday space</small>
+            </strong>
+            <p>
+              {connected ? (
+                <>
+                  <Wifi size={10} />
+                  <span>Connected</span>
+                </>
+              ) : (
+                <>
+                  <WifiOff size={10} />
+                  <span>Reconnecting…</span>
+                </>
+              )}
+            </p>
+          </div>
+          <button
+            className="icon-btn"
+            aria-label="Find anything"
+            title="Find anything · Ctrl K"
+            onClick={() => onFeature('command')}
+          >
+            <Search size={19} />
+          </button>
+        </div>
+        <header className="inbox-heading">
+          <div>
+            <p className="eyebrow">A PLACE FOR YOUR PEOPLE</p>
+            <h1>
+              Conversations<span>{users.length}</span>
+            </h1>
+          </div>
+          <button
+            aria-label="New group"
+            title="New group"
+            className="new-chat-button"
+            disabled={!connected}
+            onClick={() => onFeature('group_create')}
+          >
+            <Plus size={21} />
+          </button>
+          <div ref={menu} className="relative">
+            <button
+              className="icon-btn"
+              aria-label="Inbox menu"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen(!menuOpen)}
+            >
+              <MoreHorizontal size={20} />
+            </button>
+            {menuOpen && (
+              <div className="inbox-menu" role="menu" aria-label="Inbox actions">
+                {actions.map(([key, label, Icon]) => (
+                  <button
+                    role="menuitem"
+                    key={key}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      if (key === 'select') setSelecting(true);
+                      else if (key === 'read') onBulk('read');
+                      else if (key === 'logout') onLogout();
+                      else onFeature(key);
+                    }}
+                  >
+                    <Icon size={16} />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </header>
+        <div className="inbox-search">
+          <Search size={17} />
+          <input
+            aria-label="Search chats"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search a name, group or recent message"
+          />
+          <kbd>/</kbd>
+        </div>
+        <div className="inbox-tabs scroll-thin">
+          {[
+            ['all', 'All'],
+            ['unread', 'Unread'],
+            ['groups', 'Groups'],
+            ['favorites', 'Favourites'],
+            ['archived', 'Archived'],
+            ...(p.lists || []).map((l) => [l.id, l.name]),
+          ].map(([key, label]) => (
+            <button key={key} className={tab === key ? 'active' : ''} onClick={() => setTab(key)}>
+              {label}
+              {key === 'unread' && total > 0 && <span>{total}</span>}
+            </button>
+          ))}
+        </div>
+        {selecting && (
+          <div className="inbox-bulk">
+            <span>{checked.length} selected</span>
+            <button
+              disabled={!checked.length}
+              aria-label="Archive selected chats"
+              title="Archive selected"
+              onClick={() => {
+                onBulk('archive', checked);
+                setSelecting(false);
+                setChecked([]);
+              }}
+            >
+              <Archive size={16} />
+            </button>
+            <button
+              disabled={!checked.length}
+              aria-label="Read selected chats"
+              onClick={() => {
+                onBulk('read', checked);
+                setSelecting(false);
+                setChecked([]);
+              }}
+            >
+              <CheckCheck size={16} />
+            </button>
+            <button
+              aria-label="Cancel chat selection"
+              onClick={() => {
+                setSelecting(false);
+                setChecked([]);
+              }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
+        {founder && tab === 'all' && !q && (
+          <button className="founder-card" onClick={() => onSelect(founder)}>
+            <ShieldCheck size={19} />
+            <span>
+              Talk to the founder<small>A question, a thought, a bright idea.</small>
+            </span>
+          </button>
+        )}
+        <div className="chat-list scroll-thin">
+          {filtered.length === 0 && (
+            <div className="empty-inbox">
+              <MessagesSquare size={30} />
+              <h3>{q ? 'No conversations found' : 'A little quiet, for now.'}</h3>
+              <p>
+                {q
+                  ? 'Try another name or phrase.'
+                  : 'Start a conversation, create a group or save a note to yourself.'}
+              </p>
+              <button className="card-link" onClick={() => onFeature('invite')}>
+                Join a group <Link2 size={13} />
+              </button>
+            </div>
+          )}
+          {filtered.map((u) => {
+            const last = lastMessages[u.phone],
+              count = unread[roomId(me.phone, u.phone)] || 0;
+            return (
+              <div key={u.phone} className="flex items-center gap-1">
+                {selecting && (
+                  <input
+                    aria-label={`Select chat ${u.name}`}
+                    type="checkbox"
+                    checked={checked.includes(u.phone)}
+                    onChange={(e) =>
+                      setChecked(
+                        e.target.checked
+                          ? [...checked, u.phone]
+                          : checked.filter((p) => p !== u.phone)
+                      )
+                    }
+                  />
+                )}
+                <button
+                  onClick={() => onSelect(u)}
+                  className={`chat-list-item ${selected?.phone === u.phone ? 'active' : ''}`}
+                >
+                  <div className="relative">
+                    <Avatar name={u.name} size={45} online={!u.isGroup && !u.isSelf && u.online} />
+                    {u.isGroup && (
+                      <span className="group-avatar-badge">
+                        <Users size={11} />
+                      </span>
+                    )}
+                  </div>
+                  <div className="chat-list-copy">
+                    <div>
+                      <strong>{u.name}</strong>
+                      {p.pinned.includes(u.phone) && <Pin size={11} />}
+                      {p.favorites.includes(u.phone) && <Star size={11} />}
+                      {p.muted.includes(u.phone) && <BellOff size={11} />}
+                      <time>{last ? formatTime(last.time) : ''}</time>
+                    </div>
+                    <p>
+                      <span>
+                        {p.blocked.includes(u.phone)
+                          ? 'Blocked contact'
+                          : shortPreview(last) ||
+                            (u.isGroup
+                              ? `${u.members.length} people · One shared space`
+                              : u.isSelf
+                                ? 'Your thoughts, safely in one place'
+                                : u.online
+                                  ? 'Around for a conversation'
+                                  : u.about || 'Offline')}
+                      </span>
+                      {count > 0 && <b>{count > 99 ? '99+' : count}</b>}
+                    </p>
+                  </div>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <footer className="inbox-footer">
+          <button className="profile-summary" onClick={() => onFeature('profile')}>
+            <Avatar name={me.name} size={31} />
+            <span>
+              {me.name}
+              <small>Your personal space</small>
+            </span>
+          </button>
+          <div className="mobile-tools">
+            <button
+              aria-label="Workspace board"
+              title="Workspace board"
+              className="icon-btn"
+              onClick={() => onFeature('board')}
+            >
+              <PanelsTopLeft size={18} />
+            </button>
+            <button
+              aria-label="Status updates"
+              title="Status updates"
+              className="icon-btn"
+              onClick={() => onFeature('statuses')}
+            >
+              <CircleDot size={18} />
+            </button>
+            <button
+              aria-label="Call history"
+              title="Call history"
+              className="icon-btn"
+              onClick={() => onFeature('calls')}
+            >
+              <Phone size={18} />
+            </button>
+          </div>
+          <button
+            aria-label="Log out"
+            title="Log out"
+            className="icon-btn logout-shortcut"
+            onClick={onLogout}
+          >
+            <LogOut size={16} />
+          </button>
+        </footer>
+      </div>
+    </aside>
+  );
 }

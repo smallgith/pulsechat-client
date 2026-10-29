@@ -1,503 +1,517 @@
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import {
-  Paperclip, Smile, Send, X, Loader2, Mic, Trash2,
-  Image as ImageIcon, Film, FileText, Sparkles, Camera,
+  Plus,
+  Smile,
+  Send,
+  X,
+  Loader2,
+  Mic,
+  Trash2,
+  Image,
+  Film,
+  FileText,
+  Camera,
+  Music2,
+  UserRound,
+  BarChart3,
+  CalendarDays,
+  Sticker,
+  Clock3,
+  ListTodo,
+  Lightbulb,
+  Pause,
+  Play,
+  Check,
+  Sparkles,
+  ArrowUpRight,
 } from 'lucide-react';
 import { uploadFile } from '../lib/socket';
 import { formatBytes } from '../lib/format';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
+import { useAttachments } from '../hooks/useAttachments';
 import EmojiPicker from './EmojiPicker';
 import GifPicker from './GifPicker';
-import { isGiphyEnabled } from '../lib/giphy';
+import CameraCapture from './CameraCapture';
 
-export default function MessageInput({
-  onSend, onTyping, disabled, replyTo, onCancelReply,
-  draftKey,
-}) {
-  const [text, setText] = useState(() => { try { return localStorage.getItem(draftKey) || ''; } catch { return ''; } });
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const sendingRef = useRef(false);
-  const batchId = useRef(null);
-  const [files, setFiles] = useState([]);
-  const [dragging, setDragging] = useState(false);
-  const [showEmoji, setShowEmoji] = useState(false);
-  const [showGif, setShowGif] = useState(false);
-
-  const taRef = useRef(null);
-  const fileRef = useRef(null);
-  const imgRef = useRef(null);
-  const typingTimer = useRef(null);
-  const isTyping = useRef(false);
-  const dragDepth = useRef(0);
-  const filesRef = useRef([]);
-  filesRef.current = files;
-
-  const recorder = useVoiceRecorder();
-  useEffect(() => { try { if (text) localStorage.setItem(draftKey, text); else localStorage.removeItem(draftKey); } catch { /* Storage may be full. */ } }, [text, draftKey]);
-  useEffect(() => () => { clearTimeout(typingTimer.current); onTyping(false); filesRef.current.forEach((f) => f.preview && URL.revokeObjectURL(f.preview)); }, []);
-
-  /* auto-resize */
+const templates = [
+  ['Stand-up update', 'Yesterday:\n• \nToday:\n• \nBlockers:\n• None'],
+  ['Meeting notes', 'Meeting notes\n\nKey points:\n• \nDecisions:\n• \nNext steps:\n• '],
+  [
+    'Friendly follow-up',
+    'Hi! A quick follow-up on our last conversation. Could you share an update when you have a moment?',
+  ],
+  [
+    'Share availability',
+    'I’m available at the following times:\n• \n• \nWhich works best for you?',
+  ],
+];
+const MessageInput = forwardRef(function MessageInput(
+  { onSend, onTyping, disabled, replyTo, onCancelReply, draftKey, onCompose, scheduledDraft },
+  ref
+) {
+  const [text, setText] = useState(() => localStorage.getItem(draftKey) || '');
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState(''),
+    [picker, setPicker] = useState(null),
+    [cameraOpen, setCameraOpen] = useState(false);
+  const textarea = useRef(),
+    filesInput = useRef(),
+    photosInput = useRef(),
+    audioInput = useRef(),
+    typingTimer = useRef(),
+    sending = useRef(false),
+    batch = useRef(null),
+    alive = useRef(true),
+    menu = useRef();
+  const attachments = useAttachments(),
+    recorder = useVoiceRecorder();
+  const addFiles = (files) => {
+    if (disabled || busy) return;
+    attachments.add(files);
+    batch.current = null;
+  };
+  useImperativeHandle(ref, () => ({ addFiles }), [
+    disabled,
+    busy,
+    attachments.items,
+    attachments.limits,
+  ]);
   useEffect(() => {
-    const el = taRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-  }, [text]);
-
-  const handleChange = (e) => {
-    batchId.current = null;
-    setText(e.target.value);
-    if (!isTyping.current) {
-      isTyping.current = true;
-      onTyping(true);
+    if (text) localStorage.setItem(draftKey, text);
+    else localStorage.removeItem(draftKey);
+    const el = textarea.current;
+    if (el) {
+      el.style.height = 'auto';
+      el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
     }
-    clearTimeout(typingTimer.current);
-    typingTimer.current = setTimeout(() => {
-      isTyping.current = false;
+  }, [text, draftKey]);
+  useEffect(() => {
+    if (
+      scheduledDraft &&
+      draftKey.endsWith(`.${scheduledDraft.target}`) &&
+      scheduledDraft.text === text
+    )
+      setText('');
+  }, [scheduledDraft?.id]);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      clearTimeout(typingTimer.current);
       onTyping(false);
-    }, 1400);
-  };
-
-  const addFiles = (list) => {
-    batchId.current = null;
-    const arr = [...list];
-    const accepted = arr
-      .filter((f) => f.size <= 25 * 1024 * 1024)
-      .slice(0, 10 - files.length);
-    if (arr.length !== accepted.length) {
-      setError('Some files skipped (max 25MB, max 10 files)');
-    }
-    const items = accepted.map((f) => ({
-      file: f,
-      preview: f.type.startsWith('image/')
-        ? URL.createObjectURL(f)
-        : null,
-      progress: 0,
-    }));
-    setFiles((prev) => [...prev, ...items]);
-  };
-
-  const removeFile = (idx) => {
-    batchId.current = null;
-    setFiles((prev) => {
-      const item = prev[idx];
-      if (item?.preview) URL.revokeObjectURL(item.preview);
-      return prev.filter((_, i) => i !== idx);
-    });
-  };
-
-  /* drag */
-  const onDragEnter = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragDepth.current++;
-    if (e.dataTransfer?.types?.includes('Files')) setDragging(true);
-  };
-  const onDragLeave = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragDepth.current--;
-    if (dragDepth.current <= 0) {
-      dragDepth.current = 0;
-      setDragging(false);
-    }
-  };
-  const onDragOver = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-  const onDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragDepth.current = 0;
-    setDragging(false);
-    if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files);
-  };
-
-  const onPaste = (e) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    const filesArr = [];
-    for (const it of items) {
-      if (it.kind === 'file') {
-        const f = it.getAsFile();
-        if (f) filesArr.push(f);
-      }
-    }
-    if (filesArr.length) {
-      e.preventDefault();
-      addFiles(filesArr);
-    }
-  };
-
-  const submit = async () => {
-    if (disabled || sendingRef.current) return;
-    if (!text.trim() && files.length === 0) return;
-    sendingRef.current = true; setBusy(true); setError('');
-    batchId.current ||= crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
-    try {
-
-    let metas = [];
-    if (files.length > 0) {
-      try {
-        const uploads = files.map((item, i) =>
-          uploadFile(item.file, (p) => {
-            setFiles((prev) =>
-              prev.map((f, idx) => (idx === i ? { ...f, progress: p } : f))
-            );
-          }).then((res) => ({
-            url: res.url,
-            name: res.name,
-            size: res.size,
-            mime: res.mime,
-          }))
-        );
-        metas = await Promise.all(uploads);
-      } catch (e) {
-        throw new Error(e.message || 'Upload failed. Try again.');
-      }
-    }
-
-    await onSend({
-      clientId: batchId.current,
-      text: text.trim(),
-      file: metas[0] || null,
-      files: metas,
-      replyTo: replyTo
-        ? {
-            id: replyTo.id,
-            fromName: replyTo.fromName,
-            preview:
-              replyTo.text ||
-              (replyTo.file ? '📎 File' : replyTo.gif ? '🎬 GIF' : ''),
-          }
-        : null,
-    });
-
-    files.forEach((f) => f.preview && URL.revokeObjectURL(f.preview));
-    setText('');
-    batchId.current = null;
-    setFiles([]);
-    setShowEmoji(false);
-    setShowGif(false);
-    onCancelReply?.();
+    };
+  }, []);
+  useEffect(() => {
+    if (!picker) return;
+    const close = (e) => {
+      if (
+        e.key === 'Escape' ||
+        (e.type === 'pointerdown' && menu.current && !menu.current.contains(e.target))
+      )
+        setPicker(null);
+    };
+    document.addEventListener('pointerdown', close);
+    document.addEventListener('keydown', close);
+    return () => {
+      document.removeEventListener('pointerdown', close);
+      document.removeEventListener('keydown', close);
+    };
+  }, [picker]);
+  const changed = (value) => {
+    setText(value);
+    batch.current = null;
+    onTyping(true);
     clearTimeout(typingTimer.current);
-    isTyping.current = false;
-    onTyping(false);
-    taRef.current?.focus();
-    } catch (e) { setError(e.message || 'Message could not be sent. Your draft is saved.'); }
-    finally { sendingRef.current = false; setBusy(false); }
+    typingTimer.current = setTimeout(() => onTyping(false), 1400);
   };
-
-  const onKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      submit();
+  const submit = async () => {
+    if (disabled || sending.current || (!text.trim() && !attachments.items.length)) return;
+    sending.current = true;
+    setBusy(true);
+    setError('');
+    setPicker(null);
+    batch.current ||= crypto.randomUUID();
+    try {
+      const files = await attachments.uploadAll();
+      if (!alive.current) return;
+      if (!text.trim() && !files.length) return;
+      await onSend({
+        clientId: batch.current,
+        text: text.trim(),
+        file: files[0] || null,
+        files,
+        replyTo: replyTo ? { id: replyTo.id } : null,
+      });
+      if (!alive.current) return;
+      setText('');
+      attachments.clear();
+      batch.current = null;
+      onCancelReply?.();
+      onTyping(false);
+      clearTimeout(typingTimer.current);
+    } catch (e) {
+      if (alive.current) setError(e.message);
+    } finally {
+      sending.current = false;
+      if (alive.current) {
+        setBusy(false);
+        textarea.current?.focus();
+      }
     }
   };
-
-  const addEmoji = (emoji) => {
-    batchId.current = null;
-    setText((t) => t + emoji);
-    taRef.current?.focus();
+  const voice = async () => {
+    if (sending.current) return;
+    sending.current = true;
+    setBusy(true);
+    setError('');
+    const result = await recorder.stop();
+    try {
+      if (!result) return;
+      const file = new File(
+        [result.blob],
+        `voice-${Date.now()}.${result.blob.type.includes('mp4') ? 'm4a' : 'webm'}`,
+        { type: result.blob.type }
+      );
+      const meta = await uploadFile(file);
+      if (alive.current) {
+        await onSend({
+          voice: { ...meta, duration: result.duration },
+          replyTo: replyTo ? { id: replyTo.id } : null,
+        });
+        onCancelReply?.();
+      }
+    } catch (e) {
+      if (alive.current) setError(e.message);
+    } finally {
+      if (result) URL.revokeObjectURL(result.url);
+      sending.current = false;
+      if (alive.current) setBusy(false);
+    }
   };
-
+  const choose = (key) => {
+    setPicker(null);
+    if (key === 'file') filesInput.current.click();
+    else if (key === 'photos') photosInput.current.click();
+    else if (key === 'audio') audioInput.current.click();
+    else if (key === 'camera') setCameraOpen(true);
+    else if (key === 'templates') setPicker('templates');
+    else onCompose(key, { initialText: text });
+  };
   const pickGif = async (gif) => {
-    if (disabled || sendingRef.current) return;
     try {
-    await onSend({
-      text: '',
-      file: null,
-      gif: { url: gif.url, preview: gif.preview },
-      replyTo: replyTo
-        ? {
-            id: replyTo.id,
-            fromName: replyTo.fromName,
-            preview: replyTo.text || '',
-          }
-        : null,
-    });
-    setShowGif(false);
-    onCancelReply?.();
-    } catch (e) { setError(e.message); }
-  };
-
-  const startRecording = async () => {
-    const ok = await recorder.start();
-    if (!ok) setError('Microphone unavailable. Allow microphone access and use HTTPS or localhost.');
-  };
-
-  const stopAndSend = async () => {
-    if (sendingRef.current) return;
-    sendingRef.current = true; setBusy(true); setError('');
-    const res = await recorder.stop();
-    if (!res) { sendingRef.current = false; setBusy(false); return; }
-    try {
-      const meta = await uploadFile(new File([res.blob], `voice-${Date.now()}.${res.blob.type.includes('mp4') ? 'm4a' : res.blob.type.includes('ogg') ? 'ogg' : 'webm'}`, { type: res.blob.type }), () => {});
-      await onSend({
-        text: '',
-        file: null,
-        voice: {
-          url: meta.url,
-          duration: res.duration || 1,
-          mime: meta.mime,
-          size: meta.size,
-        },
-        replyTo: replyTo
-          ? {
-              id: replyTo.id,
-              fromName: replyTo.fromName,
-              preview: '🎤 Voice',
-            }
-          : null,
-      });
+      await onSend({ gif: { url: gif.url }, replyTo: replyTo ? { id: replyTo.id } : null });
+      setPicker(null);
       onCancelReply?.();
-    } catch (e) { setError(e.message || 'Voice upload failed'); }
-    finally { URL.revokeObjectURL(res.url); sendingRef.current = false; setBusy(false); }
+    } catch (e) {
+      setError(e.message);
+    }
   };
-
-  const uploading = busy;
-  const hasContent = text.trim() || files.length > 0;
-  const fmt = (s) =>
-    `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60)
-      .toString()
-      .padStart(2, '0')}`;
-
+  const input = (inputRef, accept) => (
+    <input
+      ref={inputRef}
+      type="file"
+      accept={accept}
+      multiple
+      hidden
+      onChange={(e) => {
+        addFiles(e.target.files);
+        e.target.value = '';
+      }}
+    />
+  );
   return (
-    <fieldset disabled={disabled || busy}
-      onDragEnter={onDragEnter}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
-      className="relative min-w-0 border-t border-white/10 bg-ink-800/95 backdrop-blur-xl shrink-0 safe-bottom"
-    >
-      {error && <p role="alert" className="px-4 pt-2 text-xs text-red-400">{error}</p>}
-      {busy && <p className="px-4 pt-2 text-xs text-brand-400">Sending…</p>}
-      {dragging && (
-        <div className="absolute inset-0 z-40 bg-brand-500/15 border-2 border-dashed border-brand-500/60 rounded-lg flex flex-col items-center justify-center pointer-events-none">
-          <ImageIcon className="w-10 h-10 text-brand-400 mb-2" />
-          <p className="text-sm font-semibold text-brand-400">Drop files here</p>
-        </div>
+    <div className="composer" ref={menu}>
+      {input(filesInput)}
+      {input(photosInput, 'image/*,video/*')}
+      {input(audioInput, 'audio/*')}
+      {(error || attachments.error) && (
+        <p role="alert" className="error-banner !m-2">
+          {error || attachments.error}
+        </p>
       )}
-
-      {/* reply */}
       {replyTo && (
-        <div className="px-2 sm:px-3 pt-2 sm:pt-3">
-          <div className="flex items-center gap-3 p-2.5 rounded-xl bg-ink-900/80 border-l-4 border-brand-500 animate-pop-in">
-            <div className="min-w-0 flex-1">
-              <p className="text-[11px] font-semibold text-brand-400 truncate">
-                Replying to {replyTo.fromName || 'message'}
-              </p>
-              <p className="text-xs text-slate-400 truncate">
-                {replyTo.text ||
-                  (replyTo.file
-                    ? '📎 File'
-                    : replyTo.gif
-                      ? '🎬 GIF'
-                      : replyTo.voice
-                        ? '🎤 Voice'
-                        : '')}
-              </p>
-            </div>
-            <button
-              onClick={onCancelReply}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition"
-            >
-              <X className="w-4 h-4" />
-            </button>
+        <div className="reply-banner">
+          <div>
+            <strong>Replying to {replyTo.fromName}</strong>
+            <p>{replyTo.text || replyTo.task?.title || replyTo.poll?.question || 'Attachment'}</p>
           </div>
+          <button className="icon-btn" aria-label="Cancel reply" onClick={onCancelReply}>
+            <X size={16} />
+          </button>
         </div>
       )}
-
-      {showEmoji && (
-        <EmojiPicker
-          onPick={addEmoji}
-          onClose={() => setShowEmoji(false)}
-        />
-      )}
-      {showGif && <GifPicker onPick={pickGif} onClose={() => setShowGif(false)} />}
-
-      {/* files grid */}
-      {files.length > 0 && (
-        <div className="px-2 sm:px-3 pt-2 sm:pt-3">
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 animate-pop-in">
-            {files.map((item, i) => (
-              <div
-                key={i}
-                className="relative group rounded-xl overflow-hidden bg-ink-900/70 border border-white/10 aspect-square"
-              >
+      {attachments.items.length > 0 && (
+        <div className="transfer-queue" aria-label="File upload queue">
+          <div className="queue-heading">
+            <span>
+              {attachments.items.length} files ·{' '}
+              {formatBytes(attachments.items.reduce((sum, item) => sum + item.file.size, 0))}
+            </span>
+            <small>
+              Up to {formatBytes(attachments.limits.maxFileSize)} each · resume supported
+            </small>
+          </div>
+          {attachments.items.map((item) => (
+            <div className="transfer-item" key={item.id}>
+              <div className="transfer-preview">
                 {item.preview ? (
-                  <img
-                    src={item.preview}
-                    alt=""
-                    className="w-full h-full object-cover"
-                  />
+                  <img src={item.preview} alt="" />
+                ) : item.file.type.startsWith('video/') ? (
+                  <Film size={20} />
+                ) : item.file.type.startsWith('audio/') ? (
+                  <Music2 size={20} />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    {item.file.type.startsWith('video/') ? (
-                      <Film className="w-7 h-7 text-slate-400" />
-                    ) : (
-                      <FileText className="w-7 h-7 text-slate-400" />
-                    )}
-                  </div>
-                )}
-
-                <div className="absolute inset-x-0 bottom-0 p-1.5 bg-gradient-to-t from-black/85 to-transparent">
-                  <p className="text-[10px] text-white truncate">
-                    {item.file.name}
-                  </p>
-                </div>
-
-                {item.progress > 0 && item.progress < 100 && (
-                  <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
-                    <Loader2 className="w-5 h-5 animate-spin text-brand-400" />
-                  </div>
-                )}
-
-                {!uploading && (
-                  <button
-                    onClick={() => removeFile(i)}
-                    className="absolute top-1 right-1 p-1 rounded-lg bg-black/70 text-slate-300 hover:text-red-400 transition"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+                  <FileText size={20} />
                 )}
               </div>
-            ))}
-          </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium truncate">{item.file.name}</p>
+                <div className="flex justify-between gap-2 text-[10px] text-slate-400 mt-1">
+                  <span>
+                    {formatBytes(item.file.size)} ·{' '}
+                    {item.status === 'error'
+                      ? item.error
+                      : item.status === 'ready'
+                        ? 'Ready to send'
+                        : item.status}
+                  </span>
+                  <span>{item.progress}%</span>
+                </div>
+                <progress
+                  aria-label={`Upload progress ${item.file.name}`}
+                  value={item.progress}
+                  max={100}
+                />
+              </div>
+              {['uploading', 'retrying'].includes(item.status) && (
+                <button
+                  className="icon-btn"
+                  aria-label={`Pause ${item.file.name}`}
+                  onClick={() => attachments.pause(item.id)}
+                >
+                  <Pause size={15} />
+                </button>
+              )}
+              {item.status === 'paused' && (
+                <button
+                  className="icon-btn"
+                  aria-label={`Resume ${item.file.name}`}
+                  onClick={() => attachments.resume(item.id)}
+                >
+                  <Play size={15} />
+                </button>
+              )}
+              {item.status === 'uploaded' && <Check size={16} className="text-brand-400" />}
+              <button
+                className="icon-btn"
+                aria-label={`Remove ${item.file.name}`}
+                onClick={() => attachments.remove(item.id)}
+              >
+                <X size={15} />
+              </button>
+            </div>
+          ))}
         </div>
       )}
-
-      {/* recording bar */}
+      {picker === 'attachments' && (
+        <div className="attachment-menu" role="menu" aria-label="Attachments">
+          {[
+            ['file', 'Document', FileText],
+            ['photos', 'Photos & videos', Image],
+            ['camera', 'Camera', Camera],
+            ['audio', 'Audio', Music2],
+            ['contact_share', 'Contact', UserRound],
+            ['poll', 'Poll', BarChart3],
+            ['event', 'Event', CalendarDays],
+            ['sticker', 'New sticker', Sticker],
+            ['task', 'Shared task', ListTodo],
+            ['decision', 'Decision', Lightbulb],
+            ['schedule', 'Schedule message', Clock3],
+            ['templates', 'Quick templates', Sparkles],
+          ].map(([key, label, Icon], i) => (
+            <button role="menuitem" key={key} onClick={() => choose(key)}>
+              <span className={`attachment-icon attachment-${i % 4}`}>
+                <Icon size={19} />
+              </span>
+              <span>{label}</span>
+              <ArrowUpRight size={13} />
+            </button>
+          ))}
+        </div>
+      )}
+      {picker === 'templates' && (
+        <div className="attachment-menu templates-menu">
+          <p className="eyebrow px-3 pt-2">A HEAD START FOR YOUR NEXT MESSAGE</p>
+          {templates.map(([title, value]) => (
+            <button
+              key={title}
+              onClick={() => {
+                changed(value);
+                setPicker(null);
+                textarea.current?.focus();
+              }}
+            >
+              <Sparkles size={16} />
+              <span>{title}</span>
+              <ArrowUpRight size={13} />
+            </button>
+          ))}
+        </div>
+      )}
+      {picker === 'emoji' && (
+        <EmojiPicker onPick={(emoji) => changed(text + emoji)} onClose={() => setPicker(null)} />
+      )}
+      {picker === 'gif' && (
+        <GifPicker
+          onPick={pickGif}
+          onUpload={(file) => {
+            addFiles([file]);
+            setPicker(null);
+          }}
+          onClose={() => setPicker(null)}
+        />
+      )}
+      {cameraOpen && (
+        <CameraCapture
+          onClose={() => setCameraOpen(false)}
+          onCapture={(file) => addFiles([file])}
+        />
+      )}
       {recorder.recording ? (
-        <div className="px-2 sm:px-3 py-2 sm:py-3 flex items-center gap-2 sm:gap-3">
+        <div className="composer-row">
           <button
-            onClick={recorder.cancel}
+            className="icon-btn text-red-400"
             aria-label="Cancel recording"
-            className="p-2.5 rounded-full text-red-400 hover:bg-red-500/10 active:bg-red-500/20 transition"
+            onClick={recorder.cancel}
           >
-            <Trash2 className="w-5 h-5" />
+            <Trash2 size={20} />
           </button>
-
-          <div className="flex-1 flex items-center gap-3 px-4 py-2.5 rounded-full bg-red-500/10 border border-red-500/20">
-            <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
-            <span className="text-sm font-medium text-red-400">Recording</span>
-            <span className="ml-auto text-sm font-mono text-red-300">
-              {fmt(recorder.seconds)}
-            </span>
+          <div className="flex-1 flex items-center gap-3 text-red-400 text-sm">
+            <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
+            <span>Recording</span>
+            <span className="ml-auto font-mono">{`${Math.floor(recorder.seconds / 60)
+              .toString()
+              .padStart(2, '0')}:${(recorder.seconds % 60).toString().padStart(2, '0')}`}</span>
           </div>
-
           <button
-            onClick={stopAndSend}
+            className="send-button"
             aria-label="Send voice message"
-            className="p-3 rounded-full bg-gradient-to-br from-brand-500 to-emerald-600 shadow-lg shadow-brand-500/25 hover:brightness-110 active:scale-95 transition"
+            disabled={busy}
+            onClick={voice}
           >
-            <Send className="w-5 h-5" />
+            <Send size={18} />
           </button>
         </div>
       ) : (
-        /* ---------- WhatsApp-style composer ---------- */
-        <div className="flex items-end gap-1.5 sm:gap-2 px-2 sm:px-3 py-2 sm:py-3">
-          <input
-            ref={fileRef}
-            type="file"
-            multiple
-            hidden
-            onChange={(e) => {
-              addFiles(e.target.files);
-              e.target.value = '';
-            }}
-          />
-          <input
-            ref={imgRef}
-            type="file"
-            accept="image/*,video/*"
-            multiple
-            hidden
-            onChange={(e) => {
-              addFiles(e.target.files);
-              e.target.value = '';
-            }}
-          />
-
-          {/* main input pill */}
-          <div className="flex-1 flex items-end gap-0.5 sm:gap-1 px-2 sm:px-3 py-1.5 rounded-full bg-ink-900/80 border border-white/10 focus-within:border-brand-500/40 transition min-w-0">
-            <button
-              onClick={() => {
-                setShowEmoji((s) => !s);
-                setShowGif(false);
-              }}
-              className={`p-2 rounded-full transition shrink-0 ${
-                showEmoji
-                  ? 'text-brand-400 bg-brand-500/10'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-              }`}
-              aria-label="Emoji"
-            >
-              <Smile className="w-5 h-5" />
-            </button>
-
+        <div className="composer-row">
+          <button
+            disabled={disabled || busy}
+            aria-label="Attach"
+            aria-expanded={picker === 'attachments'}
+            className={`composer-plus ${picker === 'attachments' ? 'active' : ''}`}
+            onClick={() => setPicker(picker === 'attachments' ? null : 'attachments')}
+          >
+            <Plus size={22} />
+          </button>
+          <div className="composer-field">
             <textarea
-              ref={taRef}
+              aria-label="Message"
+              ref={textarea}
               rows={1}
               maxLength={4000}
-              value={text}
-              onChange={handleChange}
-              onKeyDown={onKeyDown}
-              onPaste={onPaste}
               placeholder="Message"
-              className="flex-1 resize-none bg-transparent py-2 px-1 text-[15px] placeholder-slate-500 outline-none scroll-thin max-h-[120px] min-w-0"
+              value={text}
+              disabled={disabled || busy}
+              onChange={(e) => {
+                changed(e.target.value);
+                if (e.target.value === '/') setPicker('templates');
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  submit();
+                }
+              }}
+              onPaste={(e) => {
+                const files = [...(e.clipboardData?.items || [])]
+                  .filter((i) => i.kind === 'file')
+                  .map((i) => i.getAsFile())
+                  .filter(Boolean);
+                if (files.length) {
+                  e.preventDefault();
+                  addFiles(files);
+                }
+              }}
             />
-
-            {isGiphyEnabled() && <button type="button" className="p-2 text-xs font-semibold text-slate-400 rounded-full hover:bg-white/5" aria-label="GIF picker" onClick={() => { setShowGif(!showGif); setShowEmoji(false); }}>GIF</button>}
-
             <button
-              onClick={() => fileRef.current?.click()}
-              disabled={uploading}
-              className="p-2 rounded-full text-slate-400 hover:text-slate-200 hover:bg-white/5 transition shrink-0 disabled:opacity-40"
-              aria-label="Attach"
+              className="icon-btn"
+              disabled={disabled || busy}
+              aria-label="Emoji"
+              onClick={() => setPicker(picker === 'emoji' ? null : 'emoji')}
             >
-              <Paperclip className="w-5 h-5" />
+              <Smile size={19} />
             </button>
-
-            {!hasContent && (
-              <button
-                onClick={() => imgRef.current?.click()}
-                className="p-2 rounded-full text-slate-400 hover:text-slate-200 hover:bg-white/5 transition shrink-0 hidden xs:block"
-                aria-label="Camera"
-              >
-                <Camera className="w-5 h-5" />
-              </button>
-            )}
           </div>
-
-          {/* send / mic button */}
-          {hasContent ? (
+          <button
+            className="icon-btn composer-extra"
+            disabled={disabled || busy}
+            aria-label="Message templates"
+            title="Message templates"
+            onClick={() => setPicker(picker === 'templates' ? null : 'templates')}
+          >
+            <Sparkles size={18} />
+          </button>
+          {
             <button
-              onClick={submit}
-              disabled={disabled || uploading}
-              className="p-3 rounded-full bg-gradient-to-br from-brand-500 to-emerald-600 shadow-lg shadow-brand-500/25 transition hover:brightness-110 active:scale-95 disabled:opacity-35 shrink-0"
-              aria-label="Send"
+              className="icon-btn !text-xs !font-bold"
+              disabled={disabled || busy}
+              aria-label="GIF picker"
+              onClick={() => setPicker(picker === 'gif' ? null : 'gif')}
             >
-              {uploading ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <Send className="w-5 h-5" />
-              )}
+              GIF
+            </button>
+          }
+          <button
+            className="icon-btn composer-extra"
+            disabled={disabled || busy}
+            aria-label="Schedule message"
+            title="Schedule message"
+            onClick={() => choose('schedule')}
+          >
+            <Clock3 size={18} />
+          </button>
+          {busy ? (
+            <button className="send-button" aria-label="Sending" disabled>
+              <Loader2 className="animate-spin" size={19} />
+            </button>
+          ) : text.trim() || attachments.items.length ? (
+            <button className="send-button" aria-label="Send" disabled={disabled} onClick={submit}>
+              <Send size={18} />
             </button>
           ) : (
             <button
-              onClick={startRecording}
-              disabled={disabled}
-              className="p-3 rounded-full bg-gradient-to-br from-red-500 to-pink-600 shadow-lg shadow-red-500/20 transition hover:brightness-110 active:scale-95 disabled:opacity-35 shrink-0"
+              className="send-button"
               aria-label="Record voice"
+              disabled={disabled}
+              onClick={async () => {
+                if (!(await recorder.start()))
+                  setError('Allow microphone access and use HTTPS or localhost.');
+              }}
             >
-              <Mic className="w-5 h-5" />
+              <Mic size={19} />
             </button>
           )}
         </div>
       )}
-    </fieldset>
+      <div className="composer-footnote">
+        <span>
+          {busy
+            ? 'Your files travel in verified chunks. Pause or resume any transfer above.'
+            : 'A thought, a file, a plan. Drop it here.'}
+        </span>
+        <span className="hidden sm:inline">Shift + Enter for a new line</span>
+      </div>
+    </div>
   );
-}
+});
+export default MessageInput;

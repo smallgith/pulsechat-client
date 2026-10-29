@@ -34,6 +34,12 @@ export const groupByDay = (messages = []) => {
 export const shortPreview = (msg) => {
   if (!msg) return '';
   if (msg.deleted) return 'This message was deleted';
+  if (msg.task) return `☑ ${msg.task.title}`;
+  if (msg.poll) return `▥ ${msg.poll.question}`;
+  if (msg.event) return `◷ ${msg.event.title}`;
+  if (msg.decision) return `✦ ${msg.decision.title}`;
+  if (msg.contact) return `Contact · ${msg.contact.name}`;
+  if (msg.sticker) return `${msg.sticker.emoji} ${msg.sticker.label || 'Sticker'}`;
   if (msg.voice) return '🎤 Voice message';
   if (msg.gif) return '🎬 GIF';
   if (msg.file) {

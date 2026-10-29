@@ -4,16 +4,27 @@ export default {
     extend: {
       colors: {
         ink: {
-          900: '#05080f',
-          800: '#0b1120',
-          700: '#111a2e',
-          600: '#18243d',
-          500: '#22304d',
+          900: 'rgb(var(--ink-900) / <alpha-value>)',
+          800: 'rgb(var(--ink-800) / <alpha-value>)',
+          700: 'rgb(var(--ink-700) / <alpha-value>)',
+          600: 'rgb(var(--ink-600) / <alpha-value>)',
+          500: 'rgb(var(--ink-500) / <alpha-value>)',
         },
         brand: {
-          400: '#34d399',
-          500: '#10b981',
-          600: '#059669',
+          200: '#d3c7ff',
+          300: '#bba8fa',
+          400: 'rgb(var(--brand-400) / <alpha-value>)',
+          500: 'rgb(var(--brand-500) / <alpha-value>)',
+          600: 'rgb(var(--brand-600) / <alpha-value>)',
+          700: '#5634b8',
+          900: '#34215d',
+        },
+        slate: {
+          100: 'rgb(var(--text-100) / <alpha-value>)',
+          200: 'rgb(var(--text-200) / <alpha-value>)',
+          300: 'rgb(var(--text-300) / <alpha-value>)',
+          400: 'rgb(var(--text-400) / <alpha-value>)',
+          500: 'rgb(var(--text-500) / <alpha-value>)',
         },
       },
       fontFamily: {

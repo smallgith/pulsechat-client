@@ -1,6 +1,12 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import {
-  MessageCircle, ArrowRight, Smartphone, Shield, User, Loader2, CheckCircle2,
+  MessageCircle,
+  ArrowRight,
+  Smartphone,
+  Shield,
+  User,
+  Loader2,
+  CheckCircle2,
 } from 'lucide-react';
 import Avatar from './Avatar';
 import { SOCKET_URL } from '../lib/socket';
@@ -20,6 +26,9 @@ export default function Login({ onJoin, error }) {
   const timerRef = useRef(null);
 
   useEffect(() => () => clearInterval(timerRef.current), []);
+  useLayoutEffect(() => {
+    if (step === 'otp') otpRefs.current[0]?.focus();
+  }, [step]);
 
   const startResendTimer = () => {
     setResendIn(30);
@@ -54,7 +63,6 @@ export default function Login({ onJoin, error }) {
       setDemoAuth(!!data.demoAuth);
       setStep('otp');
       setOtp(['', '', '', '', '', '']);
-      setTimeout(() => otpRefs.current[0]?.focus(), 100);
       startResendTimer();
     } catch (err) {
       setLocalErr(err.message);
@@ -85,23 +93,18 @@ export default function Login({ onJoin, error }) {
 
   const handleOtpChange = (i, v) => {
     const digit = v.replace(/\D/g, '').slice(-1);
-    const next = [...otp];
-    next[i] = digit;
-    setOtp(next);
+    setOtp((previous) => previous.map((value, index) => (index === i ? digit : value)));
     if (digit && i < 5) otpRefs.current[i + 1]?.focus();
   };
 
   const handleOtpKeyDown = (i, e) => {
-    if (e.key === 'Backspace' && !otp[i] && i > 0)
-      otpRefs.current[i - 1]?.focus();
+    if (e.key === 'Backspace' && !otp[i] && i > 0) otpRefs.current[i - 1]?.focus();
     if (e.key === 'ArrowLeft' && i > 0) otpRefs.current[i - 1]?.focus();
     if (e.key === 'ArrowRight' && i < 5) otpRefs.current[i + 1]?.focus();
   };
 
   const handleOtpPaste = (e) => {
-    const text = (e.clipboardData?.getData('text') || '')
-      .replace(/\D/g, '')
-      .slice(0, 6);
+    const text = (e.clipboardData?.getData('text') || '').replace(/\D/g, '').slice(0, 6);
     if (!text) return;
     e.preventDefault();
     const next = ['', '', '', '', '', ''];
@@ -153,22 +156,41 @@ export default function Login({ onJoin, error }) {
   const stepIndex = ['phone', 'otp', 'name'].indexOf(step);
 
   return (
-    <div className="relative h-full h-[100dvh] w-full flex items-center justify-center overflow-hidden px-4 py-6 safe-top safe-bottom">
+    <div className="login-page relative h-full h-[100dvh] w-full flex items-center justify-center overflow-hidden px-4 py-6 safe-top safe-bottom">
       <div className="absolute -top-40 -left-40 w-[24rem] sm:w-[28rem] h-[24rem] sm:h-[28rem] rounded-full bg-brand-500/20 blur-[120px]" />
       <div className="absolute -bottom-40 -right-40 w-[24rem] sm:w-[28rem] h-[24rem] sm:h-[28rem] rounded-full bg-indigo-500/20 blur-[120px]" />
 
-      <div className="relative w-full max-w-md glass-solid rounded-3xl p-5 sm:p-8 shadow-2xl animate-pop-in my-auto">
+      <div className="login-story">
+        <div className="pulse-mark">
+          <span>p</span>
+          <i />
+        </div>
+        <p className="eyebrow">YOUR PEOPLE. YOUR PACE. YOUR SPACE.</p>
+        <h2>
+          A little hello.
+          <br />A <em>big possibility.</em>
+        </h2>
+        <p>
+          Good conversations have a way of becoming great things. Bring your people, plans and files
+          together in one thoughtful space.
+        </p>
+        <div>
+          <span>✦ Up to 2 GB file sharing</span>
+          <span>◷ Messages on your schedule</span>
+          <span>☑ Plans that turn into progress</span>
+        </div>
+        <small>MAKE ROOM FOR WHAT’S NEXT.</small>
+      </div>
+      <div className="login-card relative w-full max-w-md glass-solid rounded-3xl p-5 sm:p-8 shadow-2xl animate-pop-in my-auto">
         {/* logo */}
         <div className="flex items-center gap-3 mb-5 sm:mb-6">
           <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-br from-brand-400 to-emerald-600 flex items-center justify-center shadow-lg shadow-brand-500/30 shrink-0">
             <MessageCircle className="w-5 h-5 sm:w-6 sm:h-6 text-white" strokeWidth={2.4} />
           </div>
           <div className="min-w-0">
-            <h1 className="text-lg sm:text-xl font-bold tracking-tight">
-              PulseChat
-            </h1>
+            <h1 className="text-lg sm:text-xl font-bold tracking-tight">PulseChat</h1>
             <p className="text-[11px] sm:text-xs text-slate-400 truncate">
-              Premium real-time messaging
+              Room for a better conversation.
             </p>
           </div>
         </div>
@@ -193,9 +215,7 @@ export default function Login({ onJoin, error }) {
                 </div>
                 {i < 2 && (
                   <div
-                    className={`flex-1 h-0.5 rounded ${
-                      done ? 'bg-brand-500' : 'bg-white/10'
-                    }`}
+                    className={`flex-1 h-0.5 rounded ${done ? 'bg-brand-500' : 'bg-white/10'}`}
                   />
                 )}
               </div>
@@ -256,14 +276,10 @@ export default function Login({ onJoin, error }) {
                 <Shield className="w-3.5 h-3.5" /> Verification Code
               </label>
               <p className="text-xs text-slate-400 mb-3">
-                Sent to{' '}
-                <span className="text-slate-200 font-medium">+91 {phone}</span>
+                Sent to <span className="text-slate-200 font-medium">+91 {phone}</span>
               </p>
 
-              <div
-                className="flex gap-1.5 sm:gap-2 justify-between"
-                onPaste={handleOtpPaste}
-              >
+              <div className="flex gap-1.5 sm:gap-2 justify-between" onPaste={handleOtpPaste}>
                 {otp.map((d, i) => (
                   <input
                     key={i}
@@ -280,7 +296,14 @@ export default function Login({ onJoin, error }) {
 
               <div className="mt-3 flex items-center justify-between text-xs gap-2">
                 <span className="text-slate-500 truncate">
-                  {demoAuth ? <>Demo login · Code: <span className="text-brand-400 font-mono font-semibold">111111</span></> : 'Check your SMS for the code'}
+                  {demoAuth ? (
+                    <>
+                      Demo login · Code:{' '}
+                      <span className="text-brand-400 font-mono font-semibold">111111</span>
+                    </>
+                  ) : (
+                    'Check your SMS for the code'
+                  )}
                 </span>
                 <button
                   type="button"

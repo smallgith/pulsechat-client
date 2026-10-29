@@ -1,5 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { MessagesSquare, Search, X, ChevronUp, ChevronDown } from 'lucide-react';
+import {
+  MessagesSquare,
+  Search,
+  X,
+  ChevronUp,
+  ChevronDown,
+  UploadCloud,
+  ArrowUpRight,
+  ListTodo,
+  Clock3,
+  Lightbulb,
+  Sparkles,
+} from 'lucide-react';
 import MessageBubble from './MessageBubble';
 import MessageInput from './MessageInput';
 import ChatHeader from './ChatHeader';
@@ -23,28 +35,76 @@ function TypingIndicator({ name }) {
   );
 }
 
-function EmptyState() {
+function EmptyState({ onFeature }) {
   return (
-    <div className="flex-1 hidden md:flex flex-col items-center justify-center chat-bg px-8 text-center">
-      <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-brand-500/20 to-indigo-500/20 border border-white/10 flex items-center justify-center mb-6">
-        <MessagesSquare className="w-11 h-11 text-brand-400" strokeWidth={1.5} />
+    <div className="workspace-welcome flex-1 hidden md:flex">
+      <div className="welcome-orbit">
+        <MessagesSquare size={42} strokeWidth={1.3} />
+        <span>✦</span>
       </div>
-      <h3 className="text-xl font-semibold mb-2">Welcome to PulseChat</h3>
-      <p className="text-sm text-slate-400 max-w-sm leading-relaxed">
-        Select a person from the list to start chatting.
+      <p className="eyebrow">A LITTLE SPACE FOR BIG IDEAS</p>
+      <h2>
+        Good conversations.
+        <br />
+        <em>Great things next.</em>
+      </h2>
+      <p className="welcome-copy">
+        Bring your people, plans and files together.
+        <br />A calmer place to talk. A smarter place to get things done.
+      </p>
+      <div className="welcome-actions">
+        {[
+          ['board', ListTodo, 'A place for your plans', 'Tasks & decisions'],
+          ['scheduled', Clock3, 'One less thing to remember', 'Your outbox'],
+          ['command', Sparkles, 'Find it. Keep moving.', 'Search everything'],
+        ].map(([key, Icon, title, label]) => (
+          <button key={key} onClick={() => onFeature(key)}>
+            <Icon size={23} />
+            <strong>{title}</strong>
+            <span>
+              {label}
+              <ArrowUpRight size={15} />
+            </span>
+          </button>
+        ))}
+      </div>
+      <p className="welcome-shortcut">
+        <kbd>Ctrl</kbd>
+        <span>+</span>
+        <kbd>K</kbd> Your shortcut to everything
       </p>
     </div>
   );
 }
 
 export default function ChatWindow({
-  me, user, messages, typing,
-  muted, favorite,
-  onSend, onTyping, onBack,
-  onVoiceCall, onVideoCall,
-  onDeleteMessage, onReactMessage,
-  onAction, onEditMessage, onForwardMessage, onForwardMany, onStarMessage,
-  preferences, connected,
+  me,
+  user,
+  messages,
+  typing,
+  muted,
+  favorite,
+  onSend,
+  onTyping,
+  onBack,
+  onVoiceCall,
+  onVideoCall,
+  onDeleteMessage,
+  onReactMessage,
+  onAction,
+  onEditMessage,
+  onForwardMessage,
+  onForwardMany,
+  onStarMessage,
+  preferences,
+  connected,
+  onCompose,
+  onFeature,
+  onCardAction,
+  onOpenContact,
+  onTask,
+  onDecision,
+  scheduledDraft,
 }) {
   const bottomRef = useRef(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -54,6 +114,9 @@ export default function ChatWindow({
   const [confirm, setConfirm] = useState(null);
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
+  const composer = useRef(),
+    dragDepth = useRef(0);
+  const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -64,15 +127,11 @@ export default function ChatWindow({
   const filteredIds = useMemo(() => {
     if (!searchQ.trim()) return [];
     const q = searchQ.toLowerCase();
-    return messages
-      .filter((m) => (m.text || '').toLowerCase().includes(q))
-      .map((m) => m.id);
+    return messages.filter((m) => (m.text || '').toLowerCase().includes(q)).map((m) => m.id);
   }, [searchQ, messages]);
 
   const scrollToMessage = (id) => {
-    document
-      .getElementById(`msg-${id}`)
-      ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document.getElementById(`msg-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
   useEffect(() => {
@@ -102,10 +161,44 @@ export default function ChatWindow({
     setConfirm(null);
   };
 
-  if (!user) return <EmptyState />;
+  if (!user) return <EmptyState onFeature={onFeature} />;
+  const adminOnly = user.isGroup && user.settings?.adminsOnly && !user.admins.includes(me);
 
   return (
-    <section className="flex-1 flex flex-col min-w-0 chat-bg h-full">
+    <section
+      className="chat-panel flex-1 flex flex-col min-w-0 chat-bg h-full relative"
+      onDragEnter={(e) => {
+        if (e.dataTransfer.types.includes('Files')) {
+          e.preventDefault();
+          dragDepth.current++;
+          setDragging(true);
+        }
+      }}
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes('Files')) e.preventDefault();
+      }}
+      onDragLeave={(e) => {
+        if (e.dataTransfer.types.includes('Files')) {
+          e.preventDefault();
+          if (--dragDepth.current <= 0) setDragging(false);
+        }
+      }}
+      onDrop={(e) => {
+        if (!e.dataTransfer.files.length) return;
+        e.preventDefault();
+        dragDepth.current = 0;
+        setDragging(false);
+        composer.current?.addFiles(e.dataTransfer.files);
+      }}
+    >
+      {dragging && (
+        <div className="chat-dropzone">
+          <UploadCloud size={52} />
+          <h3>Room for every big idea.</h3>
+          <p>Drop multiple files anywhere in this conversation.</p>
+          <span>Up to 2 GB per file · resumable transfers</span>
+        </div>
+      )}
       <ChatHeader
         me={me}
         user={user}
@@ -136,7 +229,72 @@ export default function ChatWindow({
         }}
       />
 
-      {selecting && <div className="flex flex-wrap items-center gap-2 px-4 py-2 bg-ink-800 border-b border-white/10 text-xs"><span className="flex-1">{selectedIds.length} selected</span><button className="btn-secondary !text-xs" onClick={() => setSelectedIds(messages.filter((m) => !m.deleted).map((m) => m.id))}>Select all</button><button disabled={!selectedIds.length} className="btn-secondary !text-xs" onClick={() => { onForwardMany(messages.filter((m) => selectedIds.includes(m.id))); setSelecting(false); setSelectedIds([]); }}>Forward</button><button disabled={!selectedIds.length} className="btn-secondary !text-xs text-red-400" onClick={() => setConfirm({ many: true })}>Delete for me</button><button className="icon-btn" aria-label="Cancel selection" onClick={() => { setSelecting(false); setSelectedIds([]); }}><X size={16} /></button></div>}
+      <div className="conversation-context">
+        <span>
+          <span className="context-dot" />
+          {messages.length} messages · one shared space
+        </span>
+        <div>
+          <button
+            onClick={() => onAction('focus')}
+            aria-pressed={preferences.focusUntil > Date.now()}
+            className={preferences.focusUntil > Date.now() ? 'active' : ''}
+          >
+            <Sparkles size={12} />
+            {preferences.focusUntil > Date.now() ? 'Focus on · 30m' : 'Focus mode'}
+          </button>
+          <button onClick={() => onAction('board')}>
+            <ListTodo size={13} />
+            Workspace
+            {messages.filter((m) => m.task && m.task.state !== 'done' && !m.deleted).length > 0 && (
+              <b>
+                {messages.filter((m) => m.task && m.task.state !== 'done' && !m.deleted).length}
+              </b>
+            )}
+            <ArrowUpRight size={12} />
+          </button>
+        </div>
+      </div>
+
+      {selecting && (
+        <div className="flex flex-wrap items-center gap-2 px-4 py-2 bg-ink-800 border-b border-white/10 text-xs">
+          <span className="flex-1">{selectedIds.length} selected</span>
+          <button
+            className="btn-secondary !text-xs"
+            onClick={() => setSelectedIds(messages.filter((m) => !m.deleted).map((m) => m.id))}
+          >
+            Select all
+          </button>
+          <button
+            disabled={!selectedIds.length}
+            className="btn-secondary !text-xs"
+            onClick={() => {
+              onForwardMany(messages.filter((m) => selectedIds.includes(m.id)));
+              setSelecting(false);
+              setSelectedIds([]);
+            }}
+          >
+            Forward
+          </button>
+          <button
+            disabled={!selectedIds.length}
+            className="btn-secondary !text-xs text-red-400"
+            onClick={() => setConfirm({ many: true })}
+          >
+            Delete for me
+          </button>
+          <button
+            className="icon-btn"
+            aria-label="Cancel selection"
+            onClick={() => {
+              setSelecting(false);
+              setSelectedIds([]);
+            }}
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
 
       {searchOpen && (
         <div className="px-2 sm:px-5 py-2 glass-solid border-b border-white/10 flex items-center gap-2 animate-pop-in shrink-0">
@@ -199,14 +357,31 @@ export default function ChatWindow({
                     key={m.id}
                     id={`msg-${m.id}`}
                     className={
-                      isHighlighted
-                        ? 'ring-2 ring-brand-500/60 rounded-2xl transition'
-                        : ''
+                      isHighlighted ? 'ring-2 ring-brand-500/60 rounded-2xl transition' : ''
                     }
                   >
-                    {selecting && !m.deleted && <label className="flex items-center gap-2 text-[11px] text-slate-400 py-1 cursor-pointer"><input aria-label={`Select message ${m.text || 'attachment'}`} type="checkbox" checked={selectedIds.includes(m.id)} onChange={(e) => setSelectedIds((prev) => e.target.checked ? [...prev, m.id] : prev.filter((id) => id !== m.id))} />Select message</label>}
+                    {selecting && !m.deleted && (
+                      <label className="flex items-center gap-2 text-[11px] text-slate-400 py-1 cursor-pointer">
+                        <input
+                          aria-label={`Select message ${m.text || 'attachment'}`}
+                          type="checkbox"
+                          checked={selectedIds.includes(m.id)}
+                          onChange={(e) =>
+                            setSelectedIds((prev) =>
+                              e.target.checked ? [...prev, m.id] : prev.filter((id) => id !== m.id)
+                            )
+                          }
+                        />
+                        Select message
+                      </label>
+                    )}
                     <MessageBubble
                       message={m}
+                      me={me}
+                      onCardAction={onCardAction}
+                      onOpenContact={onOpenContact}
+                      onTask={onTask}
+                      onDecision={onDecision}
                       mine={m.from === me}
                       onDelete={askDelete}
                       onReply={(msg) => setReplyTo(msg)}
@@ -223,18 +398,40 @@ export default function ChatWindow({
             </div>
           ))}
 
-          {!messages.length && <p className="text-xs text-center text-slate-500 py-8">{user.phone === me ? 'Send yourself notes, links, files and voice reminders.' : 'Start the conversation. Send a message below.'}</p>}
+          {!messages.length && (
+            <p className="text-xs text-center text-slate-500 py-8">
+              {user.phone === me
+                ? 'Send yourself notes, links, files and voice reminders.'
+                : 'Start the conversation. Send a message below.'}
+            </p>
+          )}
           {typing && <TypingIndicator name={typing} />}
           <div ref={bottomRef} />
         </div>
       </div>
 
-      {!connected && <p className="px-4 py-2 text-xs text-amber-300 bg-amber-500/10">Reconnecting… Your draft is saved on this device.</p>}
-      {preferences.blocked.includes(user.phone) && <p className="px-4 py-2 text-xs text-red-300 bg-red-500/10">This contact is blocked. Use the chat menu to unblock.</p>}
+      {!connected && (
+        <p className="px-4 py-2 text-xs text-amber-300 bg-amber-500/10">
+          Reconnecting… Your draft is saved on this device.
+        </p>
+      )}
+      {preferences.blocked.includes(user.phone) && (
+        <p className="px-4 py-2 text-xs text-red-300 bg-red-500/10">
+          This contact is blocked. Use the chat menu to unblock.
+        </p>
+      )}
+      {adminOnly && (
+        <p className="px-4 py-2 text-xs text-slate-400 bg-white/5">
+          Only group admins can send messages.
+        </p>
+      )}
       <MessageInput
+        ref={composer}
         key={user.phone}
         draftKey={`pulsechat.draft.${me}.${user.phone}`}
-        disabled={!connected || preferences.blocked.includes(user.phone)}
+        disabled={!connected || preferences.blocked.includes(user.phone) || adminOnly}
+        onCompose={onCompose}
+        scheduledDraft={scheduledDraft}
         onSend={onSend}
         onTyping={onTyping}
         replyTo={replyTo}
@@ -243,7 +440,13 @@ export default function ChatWindow({
 
       <ConfirmDialog
         open={!!confirm}
-        title={confirm?.many ? `Delete ${selectedIds.length} messages for me?` : confirm?.forEveryone ? 'Delete for everyone?' : 'Delete for me?'}
+        title={
+          confirm?.many
+            ? `Delete ${selectedIds.length} messages for me?`
+            : confirm?.forEveryone
+              ? 'Delete for everyone?'
+              : 'Delete for me?'
+        }
         message={
           confirm?.forEveryone
             ? 'This message will be deleted for everyone in this chat.'
@@ -253,8 +456,13 @@ export default function ChatWindow({
         danger
         onCancel={() => setConfirm(null)}
         onConfirm={async () => {
-          if (confirm?.many) { for (const m of messages.filter((m) => selectedIds.includes(m.id))) await onDeleteMessage(m, false); setSelectedIds([]); setSelecting(false); setConfirm(null); }
-          else doDelete();
+          if (confirm?.many) {
+            for (const m of messages.filter((m) => selectedIds.includes(m.id)))
+              await onDeleteMessage(m, false);
+            setSelectedIds([]);
+            setSelecting(false);
+            setConfirm(null);
+          } else doDelete();
         }}
       />
     </section>

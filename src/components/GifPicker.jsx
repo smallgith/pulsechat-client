@@ -1,133 +1,169 @@
-import { useEffect, useState } from 'react';
-import { Search, Loader2, Sparkles, AlertCircle } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Search, Loader2, Upload, X, Link2 } from 'lucide-react';
 import { isGiphyEnabled, searchGifs } from '../lib/giphy';
 
-export default function GifPicker({ onPick, onClose }) {
-  const [q, setQ] = useState('');
-  const [gifs, setGifs] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
+export default function GifPicker({ onPick, onClose, onUpload }) {
+  const [query, setQuery] = useState(''),
+    [gifs, setGifs] = useState([]),
+    [loading, setLoading] = useState(false),
+    [error, setError] = useState('');
+  const [url, setUrl] = useState(''),
+    [preview, setPreview] = useState(''),
+    [loaded, setLoaded] = useState(false);
+  const input = useRef();
+  const account = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('pulsechat.user') || '{}').phone || '';
+    } catch {
+      return '';
+    }
+  })();
+  const key = `pulsechat.gif-recents.${account}`;
+  const [recent, setRecent] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(key) || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const pick = (gif) => {
+    const next = [gif, ...recent.filter((g) => g.url !== gif.url)].slice(0, 20);
+    localStorage.setItem(key, JSON.stringify(next));
+    setRecent(next);
+    onPick(gif);
+  };
   useEffect(() => {
     if (!isGiphyEnabled()) return;
-    let cancel = false;
+    let active = true;
     setLoading(true);
     setError('');
-
-    const t = setTimeout(async () => {
-      try {
-        const data = await searchGifs(q);
-        if (!cancel) {
-          setGifs(data || []);
-          if (!data || data.length === 0) {
-            setError(q ? 'No GIFs found' : 'No trending GIFs');
-          }
-          setLoading(false);
-        }
-      } catch (e) {
-        console.error('[gif] search failed', e);
-        if (!cancel) {
-          setError('Failed to load GIFs');
-          setLoading(false);
-        }
-      }
-    }, q.trim() ? 350 : 0);
-
+    const timer = setTimeout(
+      () =>
+        searchGifs(query)
+          .then((data) => {
+            if (active) setGifs(data);
+          })
+          .catch(() => {
+            if (active)
+              setError(
+                'Search is unavailable. You can still upload a GIF or paste its image link.'
+              );
+          })
+          .finally(() => {
+            if (active) setLoading(false);
+          }),
+      300
+    );
     return () => {
-      cancel = true;
-      clearTimeout(t);
+      active = false;
+      clearTimeout(timer);
     };
-  }, [q]);
-
-  /* ---------- Config missing ---------- */
-  if (!isGiphyEnabled()) {
-    return (
-      <>
-        <div className="fixed inset-0 bg-black/40 z-20 md:hidden" onClick={onClose} />
-        <div className="fixed md:absolute bottom-0 md:bottom-full md:mb-2 left-0 right-0 md:left-3 md:right-auto md:w-[400px] z-30 glass-solid md:rounded-2xl rounded-t-3xl shadow-2xl border-t md:border border-white/15 p-6 text-center animate-pop-in">
-          <div className="md:hidden flex justify-center pb-3">
-            <div className="w-10 h-1 rounded-full bg-white/20" />
-          </div>
-          <Sparkles className="w-10 h-10 text-yellow-400 mx-auto mb-3" />
-          <p className="text-sm font-medium mb-2">GIPHY not configured</p>
-          <p className="text-xs text-slate-400 leading-relaxed mb-3">
-            Get a free API key at{' '}
-            <a
-              href="https://developers.giphy.com/dashboard/"
-              target="_blank"
-              rel="noreferrer"
-              className="text-brand-400 hover:underline"
-            >
-              developers.giphy.com
-            </a>
-          </p>
-          <p className="text-[11px] text-slate-500">
-            Add <code className="text-brand-400">VITE_GIPHY_API_KEY</code> in Netlify env vars,
-            then redeploy
-          </p>
+  }, [query]);
+  return (
+    <div className="gif-pane">
+      <header>
+        <div>
+          <strong>A little more expression.</strong>
+          <small>GIFs, your way</small>
+        </div>
+        <button className="icon-btn" aria-label="Close GIF picker" onClick={onClose}>
+          <X size={17} />
+        </button>
+      </header>
+      <input
+        type="file"
+        ref={input}
+        hidden
+        accept="image/gif"
+        onChange={(e) => {
+          if (e.target.files[0]) onUpload(e.target.files[0]);
+        }}
+      />
+      <button className="btn-secondary w-full" onClick={() => input.current.click()}>
+        <Upload size={15} />
+        Upload your GIF
+      </button>
+      <form
+        className="flex gap-2 mt-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          try {
+            const link = new URL(url);
+            if (!['https:', 'http:'].includes(link.protocol)) throw new Error();
+            setPreview(link.href);
+            setLoaded(false);
+            setError('');
+          } catch {
+            setError('Paste an http or https image link.');
+          }
+        }}
+      >
+        <input
+          className="field !text-xs"
+          placeholder="Paste a GIF image link"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+        />
+        <button className="btn-secondary" aria-label="Preview GIF link">
+          <Link2 size={16} />
+        </button>
+      </form>
+      {preview && (
+        <div className="mt-3 p-2 rounded-xl bg-white/5">
+          <img
+            src={preview}
+            alt="GIF preview"
+            className="max-h-40 mx-auto rounded-lg"
+            onLoad={() => setLoaded(true)}
+            onError={() => {
+              setError('That link could not load an image. Try a direct GIF image URL.');
+              setLoaded(false);
+            }}
+          />
           <button
-            onClick={onClose}
-            className="mt-4 px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-xs"
+            className="btn-primary w-full mt-2"
+            disabled={!loaded}
+            onClick={() => pick({ url: preview, preview })}
           >
-            Close
+            Send GIF
           </button>
         </div>
-      </>
-    );
-  }
-
-  return (
-    <>
-      <div className="fixed inset-0 bg-black/40 z-20 md:hidden" onClick={onClose} />
-
-      <div className="fixed md:absolute bottom-0 md:bottom-full md:mb-2 left-0 right-0 md:left-3 md:right-auto md:w-[400px] z-30 glass-solid md:rounded-2xl rounded-t-3xl shadow-2xl border-t md:border border-white/15 overflow-hidden animate-pop-in max-h-[75vh] md:max-h-none flex flex-col">
-        <div className="md:hidden flex justify-center pt-2 pb-1">
-          <div className="w-10 h-1 rounded-full bg-white/20" />
+      )}
+      {isGiphyEnabled() && (
+        <div className="relative mt-4">
+          <Search size={15} className="absolute left-3 top-3 text-slate-400" />
+          <input
+            className="field !pl-9 !text-xs"
+            placeholder="Search GIFs via GIPHY"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
         </div>
-
-        <div className="p-3 border-b border-white/10">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-            <input
-              autoFocus
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search GIFs…"
-              className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-ink-900/80 border border-white/10 text-sm outline-none focus:border-brand-500/40"
-            />
-          </div>
+      )}
+      {error && <p className="text-xs text-red-400 mt-3">{error}</p>}
+      {loading ? (
+        <Loader2 size={22} className="animate-spin mx-auto my-8 text-brand-400" />
+      ) : (
+        <div className="gif-grid">
+          {(isGiphyEnabled() ? gifs : recent).map((g, i) => (
+            <button
+              key={g.id || `${g.url}-${i}`}
+              aria-label={`Send GIF ${i + 1}`}
+              onClick={() => pick(g)}
+            >
+              <img src={g.preview || g.url} loading="lazy" alt="GIF" />
+            </button>
+          ))}
         </div>
-
-        <div className="flex-1 overflow-y-auto scroll-thin p-2 pb-4 min-h-0 md:max-h-80">
-          {loading ? (
-            <div className="flex items-center justify-center py-10">
-              <Loader2 className="w-5 h-5 animate-spin text-brand-400" />
-            </div>
-          ) : error && gifs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-10 gap-2">
-              <AlertCircle className="w-6 h-6 text-slate-500" />
-              <p className="text-xs text-slate-500">{error}</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-2">
-              {gifs.map((g) => (
-                <button
-                  key={g.id}
-                  onClick={() => onPick(g)}
-                  className="relative rounded-lg overflow-hidden hover:opacity-80 active:opacity-60 transition aspect-square bg-white/5"
-                >
-                  <img
-                    src={g.preview}
-                    alt=""
-                    loading="lazy"
-                    className="w-full h-full object-cover"
-                  />
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </>
+      )}
+      {!isGiphyEnabled() && recent.length === 0 && (
+        <p className="empty-hint !p-3">
+          Upload a favourite GIF or paste an image link. Your recently sent GIFs appear here.
+        </p>
+      )}
+      {isGiphyEnabled() && (
+        <p className="text-[9px] text-slate-500 text-right mt-2">Powered by GIPHY</p>
+      )}
+    </div>
   );
 }

@@ -1,9 +1,23 @@
 import { useEffect, useState } from 'react';
 import {
-  Check, CheckCheck, Download, FileText, X,
-  Trash2, Copy, Reply, Smile, MoreVertical, Star, Pencil, Forward,
+  Check,
+  CheckCheck,
+  Download,
+  FileText,
+  X,
+  Trash2,
+  Copy,
+  Reply,
+  Smile,
+  MoreVertical,
+  Star,
+  Pencil,
+  Forward,
+  ListTodo,
+  Lightbulb,
 } from 'lucide-react';
 import { formatTime, formatBytes } from '../lib/format';
+import WorkCards from './WorkCards';
 
 function Ticks({ status }) {
   if (status === 'seen') return <CheckCheck className="w-3.5 h-3.5 text-sky-400" />;
@@ -14,7 +28,21 @@ function Ticks({ status }) {
 const REACTIONS = ['❤️', '👍', '😂', '😮', '😢', '🙏'];
 
 export default function MessageBubble({
-  message, mine, onDelete, onReply, onReact, showName, onEdit, onForward, onStar, starred,
+  message,
+  mine,
+  onDelete,
+  onReply,
+  onReact,
+  showName,
+  onEdit,
+  onForward,
+  onStar,
+  starred,
+  me,
+  onCardAction,
+  onOpenContact,
+  onTask,
+  onDecision,
 }) {
   const [lightbox, setLightbox] = useState(false);
   const [reactOpen, setReactOpen] = useState(false);
@@ -22,7 +50,9 @@ export default function MessageBubble({
   const [copyError, setCopyError] = useState('');
   useEffect(() => {
     if (!ctx.open) return;
-    const close = (e) => { if (e.key === 'Escape') setCtx({ open: false }); };
+    const close = (e) => {
+      if (e.key === 'Escape') setCtx({ open: false });
+    };
     document.addEventListener('keydown', close);
     return () => document.removeEventListener('keydown', close);
   }, [ctx.open]);
@@ -32,10 +62,15 @@ export default function MessageBubble({
   const voice = message.voice;
   const isImage = file?.mime?.startsWith('image/');
   const isVideo = file?.mime?.startsWith('video/');
+  const isAudio = file?.mime?.startsWith('audio/');
 
   const onContext = (e) => {
     e.preventDefault();
-    setCtx({ open: true, x: Math.max(8, Math.min(e.clientX, window.innerWidth - 210)), y: Math.max(8, Math.min(e.clientY, window.innerHeight - 370)) });
+    setCtx({
+      open: true,
+      x: Math.max(8, Math.min(e.clientX, window.innerWidth - 210)),
+      y: Math.max(8, Math.min(e.clientY, window.innerHeight - 370)),
+    });
   };
 
   const reactions = message.reactions || {};
@@ -45,7 +80,9 @@ export default function MessageBubble({
   if (message.deleted) {
     return (
       <div className={`flex mb-1.5 ${mine ? 'justify-end' : 'justify-start'}`}>
-        <div className={`max-w-[70%] rounded-2xl px-4 py-2.5 italic text-sm text-slate-400 border border-dashed border-white/10 ${mine ? 'bg-brand-900/20' : 'bg-ink-600/60'}`}>
+        <div
+          className={`max-w-[70%] rounded-2xl px-4 py-2.5 italic text-sm text-slate-400 border border-dashed border-white/10 ${mine ? 'bg-brand-900/20' : 'bg-ink-600/60'}`}
+        >
           🚫 This message was deleted
           <div className="text-[10px] text-slate-500 mt-1 text-right not-italic">
             {formatTime(message.time)}
@@ -57,18 +94,41 @@ export default function MessageBubble({
 
   return (
     <>
-      <div className={`flex ${reactionEmojis.length ? 'mb-5' : 'mb-1.5'} animate-fade-up ${mine ? 'justify-end' : 'justify-start'}`}>
+      <div
+        className={`flex ${reactionEmojis.length ? 'mb-5' : 'mb-1.5'} animate-fade-up ${mine ? 'justify-end' : 'justify-start'}`}
+      >
         <div
           onContextMenu={onContext}
-          className={`group relative max-w-[78%] sm:max-w-[65%] lg:max-w-[55%] rounded-2xl px-1.5 pt-1.5 pb-1 shadow-lg transition
-            ${mine
-              ? 'bg-gradient-to-br from-brand-600 to-emerald-700 rounded-br-md'
-              : 'bg-ink-600/90 border border-white/5 rounded-bl-md'}`}
+          className={`message-bubble group relative max-w-[88%] sm:max-w-[75%] lg:max-w-[65%] rounded-2xl px-1.5 pt-1.5 pb-1 transition ${mine ? 'bubble-mine' : 'bubble-theirs'}
+            ${
+              mine
+                ? 'bg-gradient-to-br from-brand-600 to-emerald-700 rounded-br-md'
+                : 'bg-ink-600/90 border border-white/5 rounded-bl-md'
+            }`}
         >
-          <div className="flex items-center gap-3 px-2 pt-0.5 text-[10px]"><span className="flex-1 min-w-0 truncate text-brand-200">{showName ? message.fromName : ''}{message.forwarded && <i className="text-white/60">{showName ? ' · ' : ''}Forwarded</i>}</span><button aria-label="Message options" onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); onContext({ preventDefault() {}, clientX: r.left, clientY: r.bottom }); }} className="p-1 rounded hover:bg-black/20 text-white/60"><MoreVertical size={13} /></button></div>
+          <div className="flex items-center gap-3 px-2 pt-0.5 text-[10px]">
+            <span className="flex-1 min-w-0 truncate text-brand-200">
+              {showName ? message.fromName : ''}
+              {message.forwarded && (
+                <i className="text-white/60">{showName ? ' · ' : ''}Forwarded</i>
+              )}
+            </span>
+            <button
+              aria-label="Message options"
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                onContext({ preventDefault() {}, clientX: r.left, clientY: r.bottom });
+              }}
+              className="p-1 rounded hover:bg-black/20 text-white/60"
+            >
+              <MoreVertical size={13} />
+            </button>
+          </div>
           {/* reply preview */}
           {message.replyTo && (
-            <div className={`mx-2 mt-1 mb-1 px-2.5 py-1.5 rounded-lg border-l-2 ${mine ? 'bg-black/20 border-white/60' : 'bg-black/30 border-brand-400'}`}>
+            <div
+              className={`mx-2 mt-1 mb-1 px-2.5 py-1.5 rounded-lg border-l-2 ${mine ? 'bg-black/20 border-white/60' : 'bg-black/30 border-brand-400'}`}
+            >
               <p className="text-[11px] font-semibold opacity-80 truncate">
                 {message.replyTo.fromName || 'Reply'}
               </p>
@@ -78,16 +138,37 @@ export default function MessageBubble({
             </div>
           )}
 
+          <WorkCards
+            message={message}
+            me={me}
+            onAction={onCardAction}
+            onOpenContact={onOpenContact}
+          />
+
           {/* image */}
           {isImage && (
-            <button onClick={() => setLightbox(true)} className="block w-full overflow-hidden rounded-xl">
-              <img src={file.url} alt={file.name} loading="lazy" className="w-full max-h-80 object-cover hover:scale-[1.02] transition duration-300" />
+            <button
+              onClick={() => setLightbox(true)}
+              className="block w-full overflow-hidden rounded-xl"
+            >
+              <img
+                src={file.url}
+                alt={file.name}
+                loading="lazy"
+                className="w-full max-h-80 object-cover hover:scale-[1.02] transition duration-300"
+              />
             </button>
           )}
 
           {/* video */}
           {isVideo && (
             <video src={file.url} controls className="w-full max-h-80 rounded-xl bg-black" />
+          )}
+          {isAudio && (
+            <div className="px-2.5 py-2 min-w-[220px]">
+              <p className="text-xs mb-2 truncate">{file.name}</p>
+              <audio controls src={file.url} className="w-full" style={{ height: 36 }} />
+            </div>
           )}
 
           {/* GIF */}
@@ -101,12 +182,14 @@ export default function MessageBubble({
           {voice && (
             <div className="px-2.5 py-2 min-w-[220px]">
               <audio controls src={voice.url} className="w-full" style={{ height: 36 }} />
-              <p className="text-[10px] opacity-70 mt-0.5">{voice.duration ? `${voice.duration}s` : ''}</p>
+              <p className="text-[10px] opacity-70 mt-0.5">
+                {voice.duration ? `${voice.duration}s` : ''}
+              </p>
             </div>
           )}
 
           {/* generic file */}
-          {file && !isImage && !isVideo && (
+          {file && !isImage && !isVideo && !isAudio && (
             <a
               href={file.url}
               download={file.name}
@@ -129,20 +212,51 @@ export default function MessageBubble({
           <div className="px-2.5 pt-1 pb-0.5">
             {message.text && (
               <p className="text-[14.5px] leading-relaxed whitespace-pre-wrap break-words">
-                {message.text}
+                {message.text.split(/(https?:\/\/[^\s<>]+)/g).map((part, i) =>
+                  /^https?:\/\//.test(part) ? (
+                    <a
+                      key={i}
+                      href={part}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline underline-offset-2 break-all"
+                    >
+                      {part}
+                    </a>
+                  ) : (
+                    part
+                  )
+                )}
               </p>
             )}
-            <div className={`flex items-center justify-end gap-1 mt-1 ${mine ? 'text-white/70' : 'text-slate-400'}`}>
+            <div
+              className={`flex items-center justify-end gap-1 mt-1 ${mine ? 'text-white/70' : 'text-slate-400'}`}
+            >
               {starred && <Star size={10} className="text-yellow-300 fill-yellow-300" />}
               {message.editedAt && <span className="text-[9px]">edited</span>}
-              {message.expiresAt && <span className="text-[9px]" title={`Disappears ${new Date(message.expiresAt).toLocaleString()}`}>◷</span>}
+              {message.expiresAt && (
+                <span
+                  className="text-[9px]"
+                  title={`Disappears ${new Date(message.expiresAt).toLocaleString()}`}
+                >
+                  ◷
+                </span>
+              )}
               <span className="text-[10px] tabular-nums">{formatTime(message.time)}</span>
-              {mine && <span title={`${message.readBy?.filter((p) => p !== message.from).length || 0} read · ${message.deliveredTo?.filter((p) => p !== message.from).length || 0} delivered`}><Ticks status={message.status} /></span>}
+              {mine && (
+                <span
+                  title={`${message.readBy?.filter((p) => p !== message.from).length || 0} read · ${message.deliveredTo?.filter((p) => p !== message.from).length || 0} delivered`}
+                >
+                  <Ticks status={message.status} />
+                </span>
+              )}
             </div>
           </div>
 
           {/* hover actions */}
-          <div className={`absolute top-1 ${mine ? 'left-1 -translate-x-full' : 'right-1 translate-x-full'} opacity-0 group-hover:opacity-100 transition flex gap-0.5 px-1`}>
+          <div
+            className={`absolute top-1 ${mine ? 'left-1 -translate-x-full' : 'right-1 translate-x-full'} opacity-0 group-hover:opacity-100 transition flex gap-0.5 px-1`}
+          >
             <button
               onClick={() => setReactOpen((s) => !s)}
               className="p-1.5 rounded-full bg-ink-800/90 border border-white/10 hover:bg-ink-700"
@@ -161,11 +275,16 @@ export default function MessageBubble({
 
           {/* reaction picker */}
           {reactOpen && (
-            <div className={`absolute top-full mt-1 ${mine ? 'right-0' : 'left-0'} z-20 glass rounded-full px-2 py-1 flex gap-0.5 border border-white/10 animate-pop-in`}>
+            <div
+              className={`absolute top-full mt-1 ${mine ? 'right-0' : 'left-0'} z-20 glass rounded-full px-2 py-1 flex gap-0.5 border border-white/10 animate-pop-in`}
+            >
               {REACTIONS.map((r) => (
                 <button
                   key={r}
-                  onClick={() => { onReact?.(message, r); setReactOpen(false); }}
+                  onClick={() => {
+                    onReact?.(message, r);
+                    setReactOpen(false);
+                  }}
                   className="text-xl p-1 rounded-full hover:bg-white/10 transition"
                 >
                   {r}
@@ -176,7 +295,9 @@ export default function MessageBubble({
 
           {/* reactions display */}
           {reactionEmojis.length > 0 && (
-            <div className={`absolute -bottom-2.5 ${mine ? 'right-2' : 'left-2'} flex gap-0.5 px-1.5 py-0.5 rounded-full bg-ink-900/95 border border-white/10 shadow-lg text-xs z-10`}>
+            <div
+              className={`absolute -bottom-2.5 ${mine ? 'right-2' : 'left-2'} flex gap-0.5 px-1.5 py-0.5 rounded-full bg-ink-900/95 border border-white/10 shadow-lg text-xs z-10`}
+            >
               {reactionEmojis.map((r) => (
                 <span key={r} title={`${reactions[r].length}`}>
                   {r}
@@ -193,44 +314,115 @@ export default function MessageBubble({
       {/* context menu */}
       {ctx.open && (
         <>
-        <div className="fixed inset-0 z-[109]" onClick={() => setCtx({ open: false })} />
-        <div
-          className="fixed z-[110] py-1 glass rounded-xl shadow-2xl border border-white/10 animate-pop-in min-w-[180px]"
-          style={{ left: ctx.x, top: ctx.y }}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <button
-            onClick={async () => { try { await navigator.clipboard.writeText(message.text || message.file?.url || message.voice?.url || message.gif?.url || ''); setCtx({ open: false }); } catch { setCopyError('Clipboard unavailable in this browser.'); } }}
-            className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5"
+          <div className="fixed inset-0 z-[109]" onClick={() => setCtx({ open: false })} />
+          <div
+            className="fixed z-[110] py-1 glass rounded-xl shadow-2xl border border-white/10 animate-pop-in min-w-[180px]"
+            style={{ left: ctx.x, top: ctx.y }}
+            onMouseDown={(e) => e.stopPropagation()}
           >
-            <Copy className="w-4 h-4" /> Copy text
-          </button>
-          <button
-            onClick={() => { onReply?.(message); setCtx({ open: false }); }}
-            className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5"
-          >
-            <Reply className="w-4 h-4" /> Reply
-          </button>
-          <button className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5" onClick={() => { onForward?.(message); setCtx({ open: false }); }}><Forward size={16} />Forward</button>
-          <button className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5" onClick={() => { onStar?.(message); setCtx({ open: false }); }}><Star size={16} />{starred ? 'Unstar message' : 'Star message'}</button>
-          {mine && message.text && <button className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5" onClick={() => { onEdit?.(message); setCtx({ open: false }); }}><Pencil size={16} />Edit message</button>}
-          {copyError && <p className="text-xs text-red-400 px-3 py-2">{copyError}</p>}
-          <div className="h-px my-1 bg-white/10" />
-          {mine && (
             <button
-              onClick={() => { onDelete?.(message, true); setCtx({ open: false }); }}
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(
+                    message.text ||
+                      message.file?.url ||
+                      message.voice?.url ||
+                      message.gif?.url ||
+                      ''
+                  );
+                  setCtx({ open: false });
+                } catch {
+                  setCopyError('Clipboard unavailable in this browser.');
+                }
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5"
+            >
+              <Copy className="w-4 h-4" /> Copy text
+            </button>
+            <button
+              onClick={() => {
+                onReply?.(message);
+                setCtx({ open: false });
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5"
+            >
+              <Reply className="w-4 h-4" /> Reply
+            </button>
+            <button
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5"
+              onClick={() => {
+                onForward?.(message);
+                setCtx({ open: false });
+              }}
+            >
+              <Forward size={16} />
+              Forward
+            </button>
+            <button
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5"
+              onClick={() => {
+                onStar?.(message);
+                setCtx({ open: false });
+              }}
+            >
+              <Star size={16} />
+              {starred ? 'Unstar message' : 'Star message'}
+            </button>
+            <button
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5"
+              onClick={() => {
+                onTask?.(message);
+                setCtx({ open: false });
+              }}
+            >
+              <ListTodo size={16} />
+              Turn into a task
+            </button>
+            <button
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5"
+              onClick={() => {
+                onDecision?.(message);
+                setCtx({ open: false });
+              }}
+            >
+              <Lightbulb size={16} />
+              Record as decision
+            </button>
+            {mine && message.text && (
+              <button
+                className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5"
+                onClick={() => {
+                  onEdit?.(message);
+                  setCtx({ open: false });
+                }}
+              >
+                <Pencil size={16} />
+                Edit message
+              </button>
+            )}
+            {copyError && <p className="text-xs text-red-400 px-3 py-2">{copyError}</p>}
+            <div className="h-px my-1 bg-white/10" />
+            {mine && (
+              <button
+                onClick={() => {
+                  onDelete?.(message, true);
+                  setCtx({ open: false });
+                }}
+                className="w-full flex items-center gap-3 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10"
+              >
+                <Trash2 className="w-4 h-4" /> Delete for everyone
+              </button>
+            )}
+            <button
+              onClick={() => {
+                onDelete?.(message, false);
+                setCtx({ open: false });
+              }}
               className="w-full flex items-center gap-3 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10"
             >
-              <Trash2 className="w-4 h-4" /> Delete for everyone
+              <Trash2 className="w-4 h-4" /> Delete for me
             </button>
-          )}
-          <button
-            onClick={() => { onDelete?.(message, false); setCtx({ open: false }); }}
-            className="w-full flex items-center gap-3 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10"
-          >
-            <Trash2 className="w-4 h-4" /> Delete for me
-          </button>
-        </div>
+          </div>
         </>
       )}
 
