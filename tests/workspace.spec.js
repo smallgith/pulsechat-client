@@ -1,18 +1,7 @@
 import { test, expect } from '@playwright/test';
 import fs from 'node:fs';
+import { loginGoogle as login } from './support/google-login';
 
-async function login(page, phone, name) {
-  await page.goto('/');
-  await page.getByPlaceholder('9876543210').fill(phone);
-  await page.getByRole('button', { name: 'Send OTP' }).click();
-  for (let i = 0; i < 6; i++) await page.locator('input[maxlength="1"]').nth(i).fill('1');
-  await page.getByRole('button', { name: 'Verify', exact: true }).click();
-  await page.getByPlaceholder('e.g. Aarav Patel').fill(name);
-  await page.getByRole('button', { name: 'Start chatting' }).click();
-  await expect(page.getByText('Connected', { exact: true })).toBeVisible();
-  if (await page.getByRole('button', { name: 'Dismiss notification prompt' }).isVisible())
-    await page.getByRole('button', { name: 'Dismiss notification prompt' }).click();
-}
 const chat = (page, name) =>
   page
     .locator('aside')
@@ -68,7 +57,7 @@ test('workspace cards, drag/drop, resumable uploads, invites, themes and PIN loc
   ).toBeVisible();
   await attach(a, 'Shared task');
   await a.getByLabel('Title', { exact: true }).fill('Review the design');
-  await a.getByLabel('Assign to', { exact: true }).selectOption(phoneB);
+  await a.getByLabel('Assign to', { exact: true }).selectOption(`google:${phoneB}`);
   await a.getByLabel('Priority', { exact: true }).selectOption('high');
   await a.getByRole('button', { name: 'Create task', exact: true }).click();
   await card(b, 'Review the design')

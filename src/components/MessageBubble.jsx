@@ -21,6 +21,7 @@ import WorkCards from './WorkCards';
 import VoiceNotePlayer from './VoiceNotePlayer';
 import EmojiPicker from './EmojiPicker';
 import { downloadAttachment } from '../lib/download-attachment';
+import { resolveMediaUrl } from '../lib/media-url';
 
 function Ticks({ status }) {
   if (status === 'seen') return <CheckCheck className="w-3.5 h-3.5 text-sky-400" />;
@@ -74,9 +75,10 @@ export default function MessageBubble({
     return () => document.removeEventListener('keydown', close);
   }, [ctx.open]);
 
-  const file = message.file;
-  const gif = message.gif;
-  const voice = message.voice;
+  const media = (value) => value ? { ...value, url: resolveMediaUrl(value.url) } : null;
+  const file = media(message.file);
+  const gif = media(message.gif);
+  const voice = media(message.voice);
   const isImage = file?.mime?.startsWith('image/');
   const isVideo = file?.mime?.startsWith('video/');
   const isAudio = file?.mime?.startsWith('audio/');

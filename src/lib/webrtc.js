@@ -1,3 +1,5 @@
+import { captureCallMedia, releaseCallMedia } from './microphone';
+
 const getIceConfig = () => {
   try { const configured = JSON.parse(import.meta.env.VITE_ICE_SERVERS || 'null'); if (Array.isArray(configured) && configured.length) return { iceServers: configured }; } catch { /* Use STUN for local development. */ }
   return { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
@@ -11,8 +13,8 @@ export class CallSession {
   async startLocal() {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error('Calls need HTTPS or localhost and microphone permission.');
     if (navigator.audioSession) { this.previousAudioType = navigator.audioSession.type; try { navigator.audioSession.type = 'play-and-record'; } catch {} }
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: this.type === 'video' ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } : false });
-    if (this.destroyed) { stream.getTracks().forEach((t) => t.stop()); throw new Error('Call cancelled'); }
+    const stream = await captureCallMedia(this.type === 'video' ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } : false);
+    if (this.destroyed) { releaseCallMedia(stream); throw new Error('Call cancelled'); }
     this.localStream = stream; return stream;
   }
   createPeer() {
@@ -48,7 +50,7 @@ export class CallSession {
   destroy() {
     if (this.destroyed) return;
     this.destroyed = true; clearTimeout(this.connectTimer); clearTimeout(this.disconnectTimer);
-    if (this.ownsLocal) this.localStream?.getTracks().forEach((t) => t.stop()); this.remoteStream?.getTracks().forEach((t) => t.stop());
+    if (this.ownsLocal) releaseCallMedia(this.localStream); this.remoteStream?.getTracks().forEach((t) => t.stop());
     if (this.pc) { this.pc.onconnectionstatechange = null; this.pc.onicecandidate = null; this.pc.ontrack = null; this.pc.close(); }
     if (navigator.audioSession && this.previousAudioType) { try { navigator.audioSession.type = this.previousAudioType; } catch {} }
     this.pc = null; this.localStream = null; this.ownsLocal = true; this.remoteStream = null; this.iceQueue = [];

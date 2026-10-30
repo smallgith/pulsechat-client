@@ -1,237 +1,119 @@
-import { useState, useRef, useEffect, useLayoutEffect } from 'react';
-import {
-  MessageCircle,
-  ArrowRight,
-  Smartphone,
-  Shield,
-  User,
-  Loader2,
-  CheckCircle2,
-} from 'lucide-react';
-import Avatar from './Avatar';
+import { useEffect, useRef, useState } from 'react';
+import { MessageCircle, Loader2 } from 'lucide-react';
 import GoogleSignInButton from './GoogleSignInButton';
 import { SOCKET_URL } from '../lib/socket';
 
 export default function Login({ onJoin, error }) {
-  const [step, setStep] = useState('phone');
-  const [phone, setPhone] = useState('');
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
-  const [name, setName] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [localErr, setLocalErr] = useState('');
-  const [resendIn, setResendIn] = useState(0);
-  const [demoAuth, setDemoAuth] = useState(false);
-  const [token, setToken] = useState('');
   const [googleClientId, setGoogleClientId] = useState('');
-  const [authMode, setAuthMode] = useState('sms');
-  const [authReady, setAuthReady] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [localError, setLocalError] = useState('');
+  const [retry, setRetry] = useState(0);
   const [link, setLink] = useState(null);
-  const [linkStatus, setLinkStatus] = useState('');
   const onJoinRef = useRef(onJoin);
   onJoinRef.current = onJoin;
-
-  const otpRefs = useRef([]);
-  const timerRef = useRef(null);
-
-  useEffect(() => () => clearInterval(timerRef.current), []);
   useEffect(() => {
-    let active = true;
-    fetch(`${SOCKET_URL}/api/config`).then((r) => r.json()).then((data) => {
-      if (!active) return;
-      setGoogleClientId(data.googleClientId || '');
-      setAuthMode(data.authMode || 'sms');
-    }).catch(() => { if (active) setLocalErr('Login server is unavailable. Try again shortly.'); })
-      .finally(() => { if (active) setAuthReady(true); });
-    return () => { active = false; };
-  }, []);
+    const controller = new AbortController();
+    setLoading(true);
+    setLocalError('');
+    fetch(`${SOCKET_URL}/api/config`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Login server is unavailable. Please retry.');
+        const config = await response.json();
+        if (!config.googleClientId)
+          throw new Error('Google Sign-In needs to be configured by the site owner.');
+        setGoogleClientId(config.googleClientId);
+      })
+      .catch((error) => {
+        if (error.name !== 'AbortError') setLocalError(error.message);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [retry]);
+  const join = (data) =>
+    onJoinRef.current({ ...data.user, token: data.token, expiresAt: data.expiresAt });
   const signInGoogle = async (credential) => {
-    setLocalErr(''); setBusy(true);
+    setBusy(true);
+    setLocalError('');
     try {
       const response = await fetch(`${SOCKET_URL}/api/auth/google`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ credential }),
       });
       const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error(data.error || 'Google Sign-In failed');
-      onJoinRef.current({ phone: data.user.phone, name: data.user.name, token: data.token });
-    } catch (err) { setLocalErr(err.message); } finally { setBusy(false); }
+      if (!response.ok || !data.ok) throw new Error(data.error || 'Google Sign-In failed.');
+      join(data);
+    } catch (error) {
+      setLocalError(error.message);
+    } finally {
+      setBusy(false);
+    }
   };
-  useLayoutEffect(() => {
-    if (step === 'otp') otpRefs.current[0]?.focus();
-  }, [step]);
-
+  const startLink = async () => {
+    setBusy(true);
+    setLocalError('');
+    try {
+      const response = await fetch(`${SOCKET_URL}/api/device-link/start`, { method: 'POST' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not link this device.');
+      setLink(data);
+    } catch (error) {
+      setLocalError(error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const cancelLink = () => {
+    if (link)
+      fetch(`${SOCKET_URL}/api/device-link/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestId: link.requestId, secret: link.secret }),
+      }).catch(() => {});
+    setLink(null);
+    setLocalError('');
+  };
   useEffect(() => {
-    if (!link?.requestId || !link.secret) return;
-    let active = true;
-    let checking = false;
+    if (!link) return;
+    let active = true,
+      checking = false;
     const poll = async () => {
-      if (checking || !active) return;
+      if (!active || checking) return;
       checking = true;
       try {
-        const res = await fetch(`${SOCKET_URL}/api/device-link/status`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+        const response = await fetch(`${SOCKET_URL}/api/device-link/status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ requestId: link.requestId, secret: link.secret }),
         });
-        const data = await res.json();
+        const data = await response.json();
         if (!active) return;
-        if (!res.ok) throw new Error(data.error || 'This device-link request expired');
+        if (!response.ok) throw new Error(data.error || 'Device link expired.');
         if (data.status === 'approved') {
           active = false;
-          onJoinRef.current({ phone: data.user.phone, name: data.user.name, token: data.token });
+          join(data);
         }
-      } catch (err) {
-        if (active) { setLocalErr(err.message); setLink(null); setStep('phone'); }
-      } finally { checking = false; }
+      } catch (error) {
+        if (active) {
+          setLocalError(error.message);
+          setLink(null);
+        }
+      } finally {
+        checking = false;
+      }
     };
     const timer = setInterval(poll, 2500);
     poll();
-    return () => { active = false; clearInterval(timer); };
-  }, [link?.requestId, link?.secret]);
-  const startDeviceLink = async () => {
-    setBusy(true); setLocalErr('');
-    try {
-      const response = await fetch(`${SOCKET_URL}/api/device-link/start`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Device linking is unavailable');
-      setLink(data);
-      setStep('link');
-    } catch (err) { setLocalErr(err.message); }
-    finally { setBusy(false); }
-  };
-  const cancelDeviceLink = () => {
-    if (link) fetch(`${SOCKET_URL}/api/device-link/cancel`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({requestId: link.requestId, secret: link.secret}) }).catch(() => {});
-    setLink(null); setStep('phone'); setLocalErr('');
-  };
-  const startResendTimer = () => {
-    setResendIn(30);
-    clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      setResendIn((s) => {
-        if (s <= 1) {
-          clearInterval(timerRef.current);
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
-  };
-
-  const sendOtp = async (e) => {
-    e?.preventDefault();
-    setLocalErr('');
-    if (!/^\d{10}$/.test(phone)) {
-      setLocalErr('Enter a valid 10-digit mobile number');
-      return;
-    }
-    setBusy(true);
-    try {
-      const res = await fetch(`${SOCKET_URL}/api/send-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone }),
-      });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error || 'Failed to send OTP');
-      setDemoAuth(!!data.demoAuth);
-      setStep('otp');
-      setOtp(['', '', '', '', '', '']);
-      startResendTimer();
-    } catch (err) {
-      setLocalErr(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const resendOtp = async () => {
-    if (resendIn > 0) return;
-    setBusy(true);
-    setLocalErr('');
-    try {
-      const res = await fetch(`${SOCKET_URL}/api/send-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.error || 'Could not resend code');
-      startResendTimer();
-    } catch (err) {
-      setLocalErr(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleOtpChange = (i, v) => {
-    const digit = v.replace(/\D/g, '').slice(-1);
-    setOtp((previous) => previous.map((value, index) => (index === i ? digit : value)));
-    if (digit && i < 5) otpRefs.current[i + 1]?.focus();
-  };
-
-  const handleOtpKeyDown = (i, e) => {
-    if (e.key === 'Backspace' && !otp[i] && i > 0) otpRefs.current[i - 1]?.focus();
-    if (e.key === 'ArrowLeft' && i > 0) otpRefs.current[i - 1]?.focus();
-    if (e.key === 'ArrowRight' && i < 5) otpRefs.current[i + 1]?.focus();
-  };
-
-  const handleOtpPaste = (e) => {
-    const text = (e.clipboardData?.getData('text') || '').replace(/\D/g, '').slice(0, 6);
-    if (!text) return;
-    e.preventDefault();
-    const next = ['', '', '', '', '', ''];
-    text.split('').forEach((d, i) => {
-      next[i] = d;
-    });
-    setOtp(next);
-    otpRefs.current[Math.min(text.length, 5)]?.focus();
-  };
-
-  const verifyOtp = async (e) => {
-    e?.preventDefault();
-    setLocalErr('');
-    const code = otp.join('');
-    if (code.length !== 6) {
-      setLocalErr('Enter the 6-digit OTP');
-      return;
-    }
-    setBusy(true);
-    try {
-      const res = await fetch(`${SOCKET_URL}/api/verify-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, otp: code }),
-      });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error || 'Invalid OTP');
-      setToken(data.token);
-      if (!data.user?.name?.startsWith('User ')) setName(data.user?.name || '');
-      setStep('name');
-    } catch (err) {
-      setLocalErr(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const finish = (e) => {
-    e.preventDefault();
-    setLocalErr('');
-    const n = name.trim();
-    if (n.length < 2) {
-      setLocalErr('Name must be at least 2 characters');
-      return;
-    }
-    onJoin({ phone, name: n, token });
-  };
-
-  const stepIndex = ['phone', 'otp', 'name'].indexOf(step);
-
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [link]);
   return (
-    <div className="login-page relative h-full h-[100dvh] w-full flex items-center justify-center overflow-hidden px-4 py-6 safe-top safe-bottom">
-      <div className="absolute -top-40 -left-40 w-[24rem] sm:w-[28rem] h-[24rem] sm:h-[28rem] rounded-full bg-brand-500/20 blur-[120px]" />
-      <div className="absolute -bottom-40 -right-40 w-[24rem] sm:w-[28rem] h-[24rem] sm:h-[28rem] rounded-full bg-indigo-500/20 blur-[120px]" />
-
+    <div className="login-page relative h-[100dvh] w-full flex items-center justify-center overflow-hidden px-4 py-6 safe-top safe-bottom">
       <div className="login-story">
         <div className="pulse-mark">
           <span>p</span>
@@ -254,226 +136,75 @@ export default function Login({ onJoin, error }) {
         <small>MAKE ROOM FOR WHAT’S NEXT.</small>
       </div>
       <div className="login-card relative w-full max-w-md glass-solid rounded-3xl p-5 sm:p-8 shadow-2xl animate-pop-in my-auto">
-        {/* logo */}
-        <div className="flex items-center gap-3 mb-5 sm:mb-6">
-          <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-br from-brand-400 to-emerald-600 flex items-center justify-center shadow-lg shadow-brand-500/30 shrink-0">
-            <MessageCircle className="w-5 h-5 sm:w-6 sm:h-6 text-white" strokeWidth={2.4} />
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-12 h-12 rounded-2xl bg-brand-500 flex items-center justify-center text-white">
+            <MessageCircle size={24} />
           </div>
-          <div className="min-w-0">
-            <h1 className="text-lg sm:text-xl font-bold tracking-tight">PulseChat</h1>
-            <p className="text-[11px] sm:text-xs text-slate-400 truncate">
-              Room for a better conversation.
+          <div>
+            <h1 className="text-xl font-bold">PulseChat</h1>
+            <p className="text-xs text-slate-400">Room for a better conversation.</p>
+          </div>
+        </div>
+        <h2 className="text-2xl font-semibold mb-2">Welcome to your space.</h2>
+        <p className="text-sm text-slate-400 mb-6">
+          Sign in securely with your Google account. Stay signed in on this device for at least 31
+          days.
+        </p>
+        {(localError || error) && (
+          <p role="alert" className="error-banner mb-4">
+            {localError || error}
+          </p>
+        )}
+        {loading ? (
+          <p role="status" className="flex items-center justify-center gap-2 text-sm py-4">
+            <Loader2 size={18} className="animate-spin" /> Connecting to sign-in?
+          </p>
+        ) : link ? (
+          <div className="space-y-4">
+            <p className="text-sm">
+              On your signed-in device, open <strong>Profile ? Link another device</strong> and
+              enter this code.
             </p>
-          </div>
-        </div>
-
-        {!authReady && <p className="text-center text-slate-400 text-sm py-4">Loading sign-in options…</p>}
-        {/* steps */}
-        {authReady && authMode !== 'google' && step !== 'link' && <div className="flex items-center gap-2 mb-5 sm:mb-6">
-          {['phone', 'otp', 'name'].map((s, i) => {
-            const done = i < stepIndex;
-            const active = i === stepIndex;
-            return (
-              <div key={s} className="flex items-center gap-2 flex-1">
-                <div
-                  className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition shrink-0 ${
-                    done
-                      ? 'bg-brand-500 text-ink-900'
-                      : active
-                        ? 'bg-brand-500/20 text-brand-400 ring-2 ring-brand-500/40'
-                        : 'bg-white/5 text-slate-500'
-                  }`}
-                >
-                  {done ? <CheckCircle2 className="w-4 h-4" /> : i + 1}
-                </div>
-                {i < 2 && (
-                  <div
-                    className={`flex-1 h-0.5 rounded ${done ? 'bg-brand-500' : 'bg-white/10'}`}
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        }
-        {/* PHONE */}
-        {authReady && step === 'phone' && authMode !== 'google' && (
-          <form onSubmit={sendOtp} className="space-y-4">
-            <div>
-              <label className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
-                <Smartphone className="w-3.5 h-3.5" /> Mobile Number
-              </label>
-              <div className="flex items-center rounded-xl bg-ink-900/80 border border-white/10 focus-within:border-brand-500/60 focus-within:ring-4 focus-within:ring-brand-500/10 transition overflow-hidden">
-                <span className="px-3 py-3.5 text-slate-300 font-medium border-r border-white/5 shrink-0">
-                  +91
-                </span>
-                <input
-                  autoFocus
-                  inputMode="numeric"
-                  maxLength={10}
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
-                  placeholder="9876543210"
-                  className="flex-1 min-w-0 px-3 py-3.5 bg-transparent outline-none placeholder-slate-500"
-                />
-              </div>
-            </div>
-
-            {(localErr || error) && (
-              <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-                {localErr || error}
-              </p>
-            )}
-
-            <button
-              type="submit"
-              disabled={busy || phone.length !== 10}
-              className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-brand-500 to-emerald-600 font-semibold shadow-lg shadow-brand-500/25 transition hover:brightness-110 active:scale-[.98] disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {busy ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <>
-                  Send OTP <ArrowRight className="w-4 h-4" />
-                </>
-              )}
+            <p className="text-3xl font-bold tracking-[.22em] text-center select-all">
+              {link.code}
+            </p>
+            <p role="status" className="text-xs text-slate-400">
+              Waiting for approval. The pairing code expires in 5 minutes.
+            </p>
+            <button type="button" className="btn-secondary w-full" onClick={cancelLink}>
+              Cancel
             </button>
-          </form>
-        )}
-        {authReady && step === 'phone' && googleClientId && <div className="mt-4 space-y-3">
-          {authMode !== 'google' && <p className="text-xs text-slate-400 text-center">Or sign in without SMS</p>}
-          <GoogleSignInButton clientId={googleClientId} onCredential={signInGoogle} onError={(e) => setLocalErr(e.message)} disabled={busy} />
-          {authMode === 'google' && <p className="text-xs text-slate-400 text-center">Free sign-in. No SMS or payment required.</p>}
-        </div>}
-        {authReady && step === 'phone' && authMode === 'google' && (localErr || error) && <p role="alert" className="error-banner mt-3">{localErr || error}</p>}
-        {authReady && step === 'phone' && <button type="button" className="btn-secondary w-full mt-4" disabled={busy} onClick={startDeviceLink}>Already signed in somewhere? Link this device</button>}
-        {step === 'link' && <div className="space-y-4">
-          <p className="text-sm text-slate-300">On your already signed-in device, open <strong>Profile → Link another device</strong>, then enter this 8-digit code.</p>
-          <div className="p-5 rounded-2xl bg-brand-500/10 text-center border border-brand-500/30">
-            <p className="text-xs text-slate-400 mb-2">Your one-time pairing code</p>
-            <p className="text-3xl font-bold tracking-[.22em] tabular-nums select-all">{link?.code}</p>
-            <p className="text-xs text-slate-400 mt-2">Expires after 5 minutes. Never share with strangers.</p>
           </div>
-          <p role="status" className="text-sm text-slate-400">Waiting for approval from your other device…</p>
-          {localErr && <p className="error-banner">{localErr}</p>}
-          <button type="button" className="btn-secondary w-full" onClick={cancelDeviceLink}>Cancel</button>
-        </div>}
-
-        {/* OTP */}
-        {step === 'otp' && (
-          <form onSubmit={verifyOtp} className="space-y-4">
-            <div>
-              <label className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
-                <Shield className="w-3.5 h-3.5" /> Verification Code
-              </label>
-              <p className="text-xs text-slate-400 mb-3">
-                Sent to <span className="text-slate-200 font-medium">+91 {phone}</span>
-              </p>
-
-              <div className="flex gap-1.5 sm:gap-2 justify-between" onPaste={handleOtpPaste}>
-                {otp.map((d, i) => (
-                  <input
-                    key={i}
-                    ref={(el) => (otpRefs.current[i] = el)}
-                    inputMode="numeric"
-                    maxLength={1}
-                    value={d}
-                    onChange={(e) => handleOtpChange(i, e.target.value)}
-                    onKeyDown={(e) => handleOtpKeyDown(i, e)}
-                    className="flex-1 min-w-0 h-12 sm:h-14 text-center text-lg sm:text-xl font-semibold rounded-xl bg-ink-900/80 border border-white/10 outline-none transition focus:border-brand-500/60 focus:ring-4 focus:ring-brand-500/10"
-                  />
-                ))}
-              </div>
-
-              <div className="mt-3 flex items-center justify-between text-xs gap-2">
-                <span className="text-slate-500 truncate">
-                  {demoAuth ? (
-                    <>
-                      Demo login · Code:{' '}
-                      <span className="text-brand-400 font-mono font-semibold">111111</span>
-                    </>
-                  ) : (
-                    'Check your SMS for the code'
-                  )}
-                </span>
-                <button
-                  type="button"
-                  onClick={resendOtp}
-                  disabled={resendIn > 0 || busy}
-                  className="text-brand-400 hover:underline disabled:opacity-50 disabled:no-underline shrink-0"
-                >
-                  {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend'}
-                </button>
-              </div>
-            </div>
-
-            {localErr && (
-              <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-                {localErr}
+        ) : googleClientId ? (
+          <div className="space-y-4">
+            <GoogleSignInButton
+              clientId={googleClientId}
+              onCredential={signInGoogle}
+              onError={(error) => setLocalError(error.message)}
+              disabled={busy}
+            />
+            {busy && (
+              <p role="status" className="text-sm text-center">
+                Signing you in?
               </p>
             )}
-
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setStep('phone')}
-                className="px-4 py-3.5 rounded-xl bg-white/5 hover:bg-white/10 text-sm font-medium transition"
-              >
-                Back
-              </button>
-              <button
-                type="submit"
-                disabled={busy || otp.join('').length !== 6}
-                className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-brand-500 to-emerald-600 font-semibold shadow-lg shadow-brand-500/25 transition hover:brightness-110 active:scale-[.98] disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {busy ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <>
-                    Verify <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* NAME */}
-        {step === 'name' && (
-          <form onSubmit={finish} className="space-y-4">
-            <div className="flex justify-center">
-              <Avatar name={name || 'You'} size={72} ring />
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
-                <User className="w-3.5 h-3.5" /> Display Name
-              </label>
-              <input
-                autoFocus
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Aarav Patel"
-                maxLength={24}
-                className="w-full px-4 py-3.5 rounded-xl bg-ink-900/80 border border-white/10 text-slate-100 placeholder-slate-500 outline-none transition focus:border-brand-500/60 focus:ring-4 focus:ring-brand-500/10"
-              />
-            </div>
-
-            {localErr && (
-              <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-                {localErr}
-              </p>
-            )}
-
             <button
-              type="submit"
-              disabled={name.trim().length < 2}
-              className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-brand-500 to-emerald-600 font-semibold shadow-lg shadow-brand-500/25 transition hover:brightness-110 active:scale-[.98] disabled:opacity-40 disabled:cursor-not-allowed"
+              type="button"
+              className="btn-secondary w-full"
+              disabled={busy}
+              onClick={startLink}
             >
-              Start chatting <ArrowRight className="w-4 h-4" />
+              Link a device to your signed-in account
             </button>
-          </form>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="btn-primary w-full"
+            onClick={() => setRetry((value) => value + 1)}
+          >
+            Retry connection
+          </button>
         )}
       </div>
     </div>

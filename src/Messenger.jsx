@@ -242,9 +242,16 @@ export default function Messenger() {
           return;
         }
         if (!res?.ok) {
-          setAuthError(res?.error || 'Please sign in again');
-          localStorage.removeItem(USER_KEY);
-          setMe(null);
+          if (res?.code === 'SESSION_EXPIRED') {
+            setAuthError(res.error);
+            localStorage.removeItem(USER_KEY);
+            setMe(null);
+          } else {
+            setConnected(false);
+            notice('Could not sync chats. Your sign-in is saved. Please reconnect.');
+            socket.disconnect();
+            setTimeout(() => { if (socketRef.current === socket) socket.connect(); }, 3000);
+          }
           return;
         }
         knownIds.current = new Set(
@@ -265,7 +272,7 @@ export default function Messenger() {
         if (typeof Notification !== 'undefined' && Notification.permission === 'granted')
           enablePush().catch(() => {});
         setMe((p) => {
-          const next = { ...p, ...res.user };
+          const next = { ...p, ...res.user, expiresAt: res.expiresAt };
           localStorage.setItem(USER_KEY, JSON.stringify(next));
           return next;
         });

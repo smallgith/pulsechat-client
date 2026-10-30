@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { SOCKET_URL } from '../lib/socket';
 
 const bytes = (hex) => Uint8Array.from(hex.match(/.{1,2}/g) || [], (v) => parseInt(v, 16));
 const hex = (data) =>
@@ -77,12 +78,12 @@ export function useAppLock(phone, suspended = false) {
     localStorage.removeItem(key);
     setRecord(null);
   };
-  const resetPin = async (otp, newPin, token) => {
+  const resetPin = async (googleCredential, newPin, token) => {
     if (wrongAttempts < 3) throw new Error('Reset is available after three incorrect PIN attempts.');
     if (!/^\d{6,8}$/.test(newPin)) throw new Error('Choose a 6–8 digit PIN.');
-    const response = await fetch(`${import.meta.env.VITE_SOCKET_URL || `${location.protocol}//${location.hostname}:5000`}/api/lock-reset`, {
+    const response = await fetch(`${SOCKET_URL}/api/lock-reset`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify(phone.startsWith('google:') ? { googleCredential: otp } : { otp }),
+      body: JSON.stringify({ googleCredential }),
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Could not verify your identity');

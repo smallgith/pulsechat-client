@@ -1,4 +1,5 @@
 import { SOCKET_URL } from './socket';
+import { resolveMediaUrl } from './media-url';
 
 const localFile = /\/api\/files\/[a-f0-9-]{36}\/?$/i;
 const missingFile = 'This file is no longer available. Ask the sender to upload it again.';
@@ -30,7 +31,7 @@ export async function downloadAttachment(file) {
   const api = `${SOCKET_URL.replace(/\/+$/, '')}/`;
   let url;
   try {
-    url = new URL(file.url, api);
+    url = new URL(resolveMediaUrl(file.url), api);
   } catch {
     throw new Error('Invalid attachment URL.');
   }

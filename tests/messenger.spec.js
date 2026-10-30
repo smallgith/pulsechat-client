@@ -1,23 +1,10 @@
 import { test, expect } from '@playwright/test';
+import { loginGoogle as login } from './support/google-login';
 
-const login = async (page, phone, name) => {
-  await page.goto('/');
-  await page.getByPlaceholder('9876543210').fill(phone);
-  await page.getByRole('button', { name: /send otp/i }).click();
-  const otp = page.locator('input[maxlength="1"]');
-  await expect(otp).toHaveCount(6);
-  for (let i = 0; i < 6; i++) await otp.nth(i).fill('1');
-  await page.getByRole('button', { name: /verify/i }).click();
-  await page.getByPlaceholder('e.g. Aarav Patel').fill(name);
-  await page.getByRole('button', { name: /start chatting/i }).click();
-  await expect(page.getByText('Connected', { exact: true })).toBeVisible();
-  const dismiss = page.getByRole('button', { name: 'Dismiss notification prompt' });
-  if (await dismiss.isVisible()) await dismiss.click();
-};
 const chat = async (page, name) => page.locator('aside').getByRole('button').filter({ has: page.getByText(name, { exact: true }) }).click();
 const send = async (page, text) => { await page.getByPlaceholder('Message', { exact: true }).fill(text); await page.getByRole('button', { name: 'Send', exact: true }).click(); };
 const menu = async (page, label) => { await page.getByRole('button', { name: 'Chat menu', exact: true }).click(); await page.getByRole('menu', { name: 'Chat actions' }).getByRole('menuitem', { name: label, exact: true }).click(); };
-const options = (page, text) => page.locator('[id^="msg-"]').filter({ has: page.getByText(text, { exact: true }) }).getByRole('button', { name: 'Message options' });
+const options = (page, text) => page.locator('[id^="msg-"]').filter({ has: page.getByText(text, { exact: true }) }).locator('.message-bubble');
 
 test('two people can message, manage groups, share files and make real WebRTC calls', async ({ browser }) => {
   const aContext = await browser.newContext({ permissions: ['microphone', 'camera'], viewport: { width: 1360, height: 900 } });
@@ -29,10 +16,10 @@ test('two people can message, manage groups, share files and make real WebRTC ca
   await login(a, `811${suffix}`, 'UI Aarav'); await login(b, `822${suffix}`, 'UI Bela');
   await chat(a, 'UI Bela'); await chat(b, 'UI Aarav');
   await send(a, 'Hello from UI Aarav'); await expect(b.getByText('Hello from UI Aarav', { exact: true }).last()).toBeVisible();
-  await options(a, 'Hello from UI Aarav').click(); await a.getByRole('button', { name: 'Edit message', exact: true }).click();
+  await options(a, 'Hello from UI Aarav').click({ button: 'right' }); await a.getByRole('button', { name: 'Edit message', exact: true }).click();
   await a.getByRole('dialog', { name: 'Edit message' }).locator('textarea').fill('Edited hello'); await a.getByRole('button', { name: 'Save changes' }).click();
   await expect(b.getByText('Edited hello', { exact: true }).last()).toBeVisible();
-  await options(a, 'Edited hello').click(); await a.getByRole('button', { name: 'Star message', exact: true }).click();
+  await options(a, 'Edited hello').click({ button: 'right' }); await a.getByRole('button', { name: 'Star message', exact: true }).click();
   await menu(a, 'Starred messages'); await expect(a.getByRole('dialog').getByText('Edited hello')).toBeVisible(); await a.getByRole('button', { name: 'Close dialog' }).click();
   await a.getByPlaceholder('Message', { exact: true }).fill('Saved draft'); await chat(a, 'Message yourself'); await chat(a, 'UI Bela'); await expect(a.getByPlaceholder('Message', { exact: true })).toHaveValue('Saved draft'); await a.getByPlaceholder('Message', { exact: true }).fill('');
   await menu(a, 'Search messages'); await a.getByPlaceholder('Search in messages…').fill('Edited'); await expect(a.getByText('1/1', { exact: true })).toBeVisible();
@@ -41,15 +28,15 @@ test('two people can message, manage groups, share files and make real WebRTC ca
   await a.getByRole('button', { name: 'Send', exact: true }).click(); await expect(b.getByRole('button', { name: /^one\.txt/ })).toBeVisible(); await expect(b.getByRole('button', { name: /^two\.txt/ })).toBeVisible();
   await a.getByRole('button', { name: 'Record voice', exact: true }).click(); await expect(a.getByText('Recording', { exact: true })).toBeVisible();
   await expect(a.getByText('00:01', { exact: true })).toBeVisible();
-  await a.getByRole('button', { name: 'Send voice message', exact: true }).click(); await expect(b.locator('audio[controls]')).toHaveCount(1);
-  await b.locator('audio[controls]').evaluate((el) => el.play());
-  await expect.poll(() => b.locator('audio[controls]').evaluate((el) => el.currentTime)).toBeGreaterThan(0);
+  await a.getByRole('button', { name: 'Send voice message', exact: true }).click(); await expect(b.locator('.voice-note audio')).toHaveCount(1);
+  await b.locator('.voice-note audio').evaluate((el) => el.play());
+  await expect.poll(() => b.locator('.voice-note audio').evaluate((el) => el.currentTime)).toBeGreaterThan(0);
   await a.getByRole('button', { name: 'New group', exact: true }).click(); const creation = a.getByRole('dialog', { name: 'New group' });
   await creation.getByLabel('Group name').fill('UI team'); await creation.getByRole('checkbox', { name: /UI Bela/ }).check(); await creation.getByRole('button', { name: 'Create group' }).click();
   await expect(a.locator('section header').getByRole('heading', { name: 'UI team' })).toBeVisible();
   await chat(b, 'UI team'); await send(a, 'Hello group'); await expect(b.getByText('Hello group', { exact: true }).last()).toBeVisible();
   await menu(a, 'Group info'); await expect(a.getByRole('dialog').getByText('Admin', { exact: true })).toBeVisible(); await a.getByRole('button', { name: 'Close dialog' }).click();
-  await options(a, 'Hello group').click(); await a.getByRole('button', { name: 'Forward', exact: true }).click(); await a.getByRole('dialog', { name: 'Forward messages' }).getByRole('button').filter({ hasText: 'Message yourself' }).click(); await expect(a.getByText('Forwarded', { exact: true })).toBeVisible();
+  await options(a, 'Hello group').click({ button: 'right' }); await a.getByRole('button', { name: 'Forward', exact: true }).click(); await a.getByRole('dialog', { name: 'Forward messages' }).getByRole('button').filter({ hasText: 'Message yourself' }).click(); await expect(a.getByText('Forwarded', { exact: true })).toBeVisible();
   await a.getByRole('button', { name: 'Status updates', exact: true }).click(); await a.getByPlaceholder("What's on your mind?").fill('UI status update'); await a.getByRole('button', { name: 'Share status' }).click();
   await b.getByRole('button', { name: 'Status updates', exact: true }).click(); await b.getByRole('dialog').getByText('UI status update', { exact: true }).click(); await expect(b.getByRole('dialog').getByText('UI status update', { exact: true }).first()).toBeVisible(); await b.getByRole('button', { name: 'Close dialog' }).click();
   await chat(a, 'UI Bela'); await chat(b, 'UI Aarav');

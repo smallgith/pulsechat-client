@@ -10,6 +10,7 @@ import CameraCapture from './CameraCapture';
 import { uploadFile, SOCKET_URL, authHeaders } from '../lib/socket';
 import GoogleSignInButton from './GoogleSignInButton';
 import { downloadAttachment } from '../lib/download-attachment';
+import { resolveMediaUrl } from '../lib/media-url';
 
 export default function FeatureDialog({
   dialog,
@@ -166,7 +167,7 @@ export default function FeatureDialog({
           </div>
           <p className="text-center text-slate-400 text-sm">{me.phone.startsWith('google:') ? 'Google account' : me.phone}</p>
           {googleClientId && !me.phone.startsWith('google:') && <div className="border border-white/10 rounded-xl p-3 space-y-2">
-            <p className="text-xs text-slate-400 text-center">Link Google to keep this account and chats without SMS fees.</p>
+            <p className="text-xs text-slate-400 text-center">Link Google to keep using this existing account and its chats.</p>
             {googleLinkDone ? <p className="text-xs text-brand-400 text-center">Google account linked. You can now sign in for free.</p> :
               <GoogleSignInButton clientId={googleClientId} onCredential={linkGoogle} onError={(e) => setError(e.message)} disabled={busy} />}
           </div>}
@@ -805,7 +806,7 @@ export default function FeatureDialog({
                   {m.fromName} · {formatTime(m.time)}
                 </p>
                 {m.file?.mime?.startsWith('image/') && (
-                  <img className="max-h-40 rounded-lg" src={m.file.url} alt={m.file.name} />
+                  <img className="max-h-40 rounded-lg" src={resolveMediaUrl(m.file.url)} alt={m.file.name} />
                 )}
                 {m.text && <p className="text-sm whitespace-pre-wrap break-words">{m.text}</p>}
                 {(m.file || m.voice || m.gif) && (

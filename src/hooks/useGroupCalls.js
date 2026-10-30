@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CallSession } from '../lib/webrtc';
+import { captureCallMedia, releaseCallMedia } from '../lib/microphone';
 import { showBrowserNotification } from '../lib/notification';
 
 // Small-group mesh calling (4 participants maximum). The backend checks group membership
@@ -17,7 +18,7 @@ export function useGroupCalls({ connected, socketRef, request, me, notice, direc
     for (const session of sessions.current.values()) session.destroy();
     sessions.current.clear();
     pendingIce.current.clear();
-    local.current?.getTracks().forEach(t => t.stop());
+    releaseCallMedia(local.current);
     local.current = null;
     active.current = null;
     setCall(null);
@@ -56,10 +57,7 @@ export function useGroupCalls({ connected, socketRef, request, me, notice, direc
 
   const startMedia = async (type) => {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error('Microphone/camera needs HTTPS and permission.');
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      video: type === 'video' ? { width: { ideal: 640 }, height: { ideal: 480 } } : false,
-    });
+    const stream = await captureCallMedia(type === 'video' ? { width: { ideal: 640 }, height: { ideal: 480 } } : false);
     local.current = stream;
     setLocalStream(stream);
   };

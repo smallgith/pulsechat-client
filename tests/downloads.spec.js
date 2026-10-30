@@ -1,5 +1,9 @@
 import { test, expect } from '@playwright/test';
 import fs from 'node:fs';
+import { loginGoogle as login, stubGoogle } from './support/google-login';
+import { googleCredential } from '../../server/test/support/google-fixture.js';
+
+test.beforeEach(async ({ page }) => stubGoogle(page));
 
 // Edge exposes its own downloads hub as a Page; it is not an attachment preview popup.
 const webPages = (context) =>
@@ -12,12 +16,9 @@ test('downloads cross-origin local attachments without leaving the chat', async 
   await page.goto('/');
   const api = 'http://localhost:15800';
   const phone = `855${String(Date.now()).slice(-7)}`;
-  await page.request.post(`${api}/api/send-otp`, { data: { phone } });
-  const auth = await (
-    await page.request.post(`${api}/api/verify-otp`, {
-      data: { phone, otp: '111111' },
-    })
-  ).json();
+  const auth = await (await page.request.post(`${api}/api/auth/google`, {
+    data: { credential: googleCredential(phone, 'Download API user') },
+  })).json();
   const bytes = Buffer.from('An actual cross-origin attachment');
   const uploaded = await (
     await page.request.post(`${api}/api/upload`, {
@@ -38,6 +39,46 @@ test('downloads cross-origin local attachments without leaving the chat', async 
   expect(download.suggestedFilename()).toBe('report.txt');
   expect(fs.readFileSync(await download.path())).toEqual(bytes);
   expect(page.url()).toBe('http://localhost:5180/');
+});
+
+test('HTTPS site downloads historical HTTP links without making a mixed-content request', async ({ page }) => {
+  const bytes = Buffer.from('Executable attachment test bytes; never execute this fixture.');
+  const auth = await (await page.request.post('http://localhost:15800/api/auth/google', {
+    data: { credential: googleCredential(`https${Date.now()}`, 'HTTPS download user') },
+  })).json();
+  const uploaded = await (await page.request.post('http://localhost:15800/api/upload', {
+    headers: { Authorization: `Bearer ${auth.token}` },
+    multipart: { file: { name: 'chrome_proxy.exe', mimeType: 'application/octet-stream', buffer: bytes } },
+  })).json();
+  const fileRequests = [];
+  // TLS boundaries are emulated at the transport layer, keeping browser mixed-content rules active.
+  await page.route('https://localhost:5180/**', async (route) => {
+    const response = await route.fetch({ url: route.request().url().replace('https:', 'http:') });
+    await route.fulfill({ response });
+  });
+  await page.route('https://localhost:15800/**', async (route) => {
+    fileRequests.push(route.request().url());
+    const response = await route.fetch({ url: route.request().url().replace('https:', 'http:') });
+    await route.fulfill({ response, headers: {
+      ...response.headers(), 'access-control-allow-origin': 'https://localhost:5180',
+      'access-control-expose-headers': 'Content-Disposition, Content-Length',
+    } });
+  });
+  await page.goto('https://localhost:5180/');
+  await page.evaluate(async (file) => {
+    const { downloadAttachment } = await import('/src/lib/download-attachment.js');
+    const button = document.createElement('button');
+    button.textContent = 'Save old HTTP file';
+    button.onclick = () => downloadAttachment(file);
+    document.body.appendChild(button);
+  }, { ...uploaded, url: uploaded.url.replace('http://localhost:15800', 'http://pulsechat-server-gyss.onrender.com') });
+  const downloadEvent = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save old HTTP file' }).click();
+  const download = await downloadEvent;
+  expect(download.suggestedFilename()).toBe('chrome_proxy.exe');
+  expect(fs.readFileSync(await download.path())).toEqual(bytes);
+  expect(fileRequests.length).toBeGreaterThanOrEqual(2);
+  expect(fileRequests.every((url) => url.startsWith('https://'))).toBe(true);
 });
 
 test('downloads hosted media bytes instead of opening a preview tab', async ({ page, context }) => {
@@ -124,19 +165,6 @@ test('Cloudinary media uses streaming server downloads without CDN CORS or previ
   expect(methods).toEqual(['HEAD', 'GET', 'HEAD', 'GET', 'HEAD', 'GET']);
   await expect.poll(() => webPages(context)).toEqual(pagesBefore);
 });
-
-async function login(page, phone, name) {
-  await page.goto('/');
-  await page.getByPlaceholder('9876543210').fill(phone);
-  await page.getByRole('button', { name: 'Send OTP' }).click();
-  for (let i = 0; i < 6; i++) await page.locator('input[maxlength="1"]').nth(i).fill('1');
-  await page.getByRole('button', { name: 'Verify', exact: true }).click();
-  await page.getByPlaceholder('e.g. Aarav Patel').fill(name);
-  await page.getByRole('button', { name: 'Start chatting' }).click();
-  await expect(page.getByText('Connected', { exact: true })).toBeVisible();
-  const dismiss = page.getByRole('button', { name: 'Dismiss notification prompt' });
-  if (await dismiss.isVisible()) await dismiss.click();
-}
 
 test('sender and recipient save image, video, audio and documents from chat and shared media', async ({
   browser,

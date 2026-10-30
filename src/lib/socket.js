@@ -1,8 +1,7 @@
 import { io } from 'socket.io-client';
+import { API_URL } from './media-url';
 
-export const SOCKET_URL =
-  import.meta.env.VITE_SOCKET_URL ||
-  `${window.location.protocol}//${window.location.hostname}:5000`;
+export const SOCKET_URL = API_URL;
 
 export const createSocket = () =>
   io(SOCKET_URL, {

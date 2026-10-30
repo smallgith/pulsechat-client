@@ -9,17 +9,16 @@ export default function AppLock({ lock, onClose, onLogout }) {
     [confirm, setConfirm] = useState(''),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
-  const [resetting, setResetting] = useState(false), [code, setCode] = useState(''), [sent, setSent] = useState(false), [hint, setHint] = useState('');
-  const current = (() => { try { return JSON.parse(localStorage.getItem('pulsechat.user') || '{}'); } catch { return {}; } })();
-  const [authMode, setAuthMode] = useState('sms');
+  const [resetting, setResetting] = useState(false);
   const [googleClientId, setGoogleClientId] = useState('');
-  const usesGoogle = !!current.phone?.startsWith('google:') || authMode === 'google';
   const [googleCredential, setGoogleCredential] = useState('');
   useEffect(() => {
-    fetch(`${SOCKET_URL}/api/config`).then((r) => r.json()).then((data) => {
-      setGoogleClientId(data.googleClientId || '');
-      setAuthMode(data.authMode || 'sms');
-    }).catch(() => {});
+    fetch(`${SOCKET_URL}/api/config`)
+      .then((r) => r.json())
+      .then((data) => {
+        setGoogleClientId(data.googleClientId || '');
+      })
+      .catch(() => {});
   }, []);
   const submit = async (e) => {
     e.preventDefault();
@@ -29,8 +28,8 @@ export default function AppLock({ lock, onClose, onLogout }) {
       if (lock.locked && resetting) {
         if (pin !== confirm) throw new Error('The PINs do not match.');
         const token = authHeaders().Authorization?.replace(/^Bearer /, '');
-        if (usesGoogle && !googleCredential) throw new Error('Verify your Google account first.');
-        await lock.resetPin(usesGoogle ? googleCredential : code, pin, token);
+        if (!googleCredential) throw new Error('Verify your Google account first.');
+        await lock.resetPin(googleCredential, pin, token);
         setResetting(false);
       } else if (lock.locked) await lock.unlock(pin);
       else if (lock.enabled) {
@@ -58,17 +57,17 @@ export default function AppLock({ lock, onClose, onLogout }) {
           {lock.locked && resetting
             ? 'Verify and reset your PIN'
             : lock.locked
-            ? 'A little privacy, please.'
-            : lock.enabled
-              ? 'App lock is enabled'
-              : 'Keep your conversations yours.'}
+              ? 'A little privacy, please.'
+              : lock.enabled
+                ? 'App lock is enabled'
+                : 'Keep your conversations yours.'}
         </h3>
         <p className="text-sm text-slate-400 mt-2">
           {lock.locked && resetting
-            ? usesGoogle ? 'Confirm your Google identity before selecting a new PIN.' : 'Confirm ownership with the one-time code sent to your registered phone.'
+            ? 'Confirm your Google identity before selecting a new PIN.'
             : lock.locked
-            ? 'Enter your PIN to return to your conversations.'
-            : 'A screen lock for this browser. Locks after 5 minutes of inactivity and whenever you reopen the app.'}
+              ? 'Enter your PIN to return to your conversations.'
+              : 'A screen lock for this browser. Locks after 5 minutes of inactivity and whenever you reopen the app.'}
         </p>
       </div>
       {error && (
@@ -76,31 +75,19 @@ export default function AppLock({ lock, onClose, onLogout }) {
           {error}
         </p>
       )}
-      {lock.locked && resetting && usesGoogle && (
+      {lock.locked && resetting && (
         <div className="space-y-3">
-          <GoogleSignInButton clientId={googleClientId} onCredential={setGoogleCredential} onError={(e) => setError(e.message)} disabled={busy} />
-          {googleCredential && <p className="text-xs text-brand-400">Google account verified. Set your new PIN.</p>}
-        </div>
-      )}
-      {lock.locked && resetting && !usesGoogle && (
-        <div className="space-y-3">
-          <button type="button" className="btn-secondary w-full" disabled={busy}
-            onClick={async () => {
-              setBusy(true); setError('');
-              try {
-                const current = JSON.parse(localStorage.getItem('pulsechat.user') || '{}');
-                const res = await fetch(`${SOCKET_URL}/api/send-otp`, { method:'POST',
-                  headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ phone: current.phone }) });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.error || 'Could not send code');
-                setSent(true); setHint(data.hint || '');
-              } catch (e) { setError(e.message); } finally { setBusy(false); }
-            }}>{sent ? 'Send a new code' : 'Send SMS verification code'}</button>
-          {hint && <p className="text-xs text-brand-400">{hint}</p>}
-          {sent && <label className="field-label">One-time code
-            <input className="field" type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6}
-              value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0,6))} required />
-          </label>}
+          <GoogleSignInButton
+            clientId={googleClientId}
+            onCredential={setGoogleCredential}
+            onError={(e) => setError(e.message)}
+            disabled={busy}
+          />
+          {googleCredential && (
+            <p className="text-xs text-brand-400">
+              Google sign-in received. Your identity will be verified when you save.
+            </p>
+          )}
         </div>
       )}
       <label className="field-label">
@@ -139,10 +126,10 @@ export default function AppLock({ lock, onClose, onLogout }) {
           : lock.locked && resetting
             ? 'Verify and save new PIN'
             : lock.locked
-            ? 'Unlock workspace'
-            : lock.enabled
-              ? 'Disable app lock'
-              : 'Enable app lock'}
+              ? 'Unlock workspace'
+              : lock.enabled
+                ? 'Disable app lock'
+                : 'Enable app lock'}
         <ArrowUpRight size={16} />
       </button>
       {lock.enabled && !lock.locked && (
@@ -159,9 +146,18 @@ export default function AppLock({ lock, onClose, onLogout }) {
       )}
       {lock.locked ? (
         <div className="space-y-2">
-          {lock.wrongAttempts >= 3 && <button type="button" className="btn-secondary w-full" onClick={() => { setResetting(!resetting); setError(''); }}>
-            {resetting ? 'Use existing PIN' : usesGoogle ? 'Forgot PIN? Verify Google account and reset' : 'Forgot PIN? Verify phone and reset'}
-          </button>}
+          {lock.wrongAttempts >= 3 && (
+            <button
+              type="button"
+              className="btn-secondary w-full"
+              onClick={() => {
+                setResetting(!resetting);
+                setError('');
+              }}
+            >
+              {resetting ? 'Use existing PIN' : 'Forgot PIN? Verify Google account and reset'}
+            </button>
+          )}
           <button type="button" className="text-xs text-slate-400 w-full" onClick={onLogout}>
             Log out and sign in again
           </button>
