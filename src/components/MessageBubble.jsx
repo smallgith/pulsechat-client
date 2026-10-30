@@ -362,6 +362,15 @@ export default function MessageBubble({
             </div>}
             <button
               onClick={async () => {
+                setCtx({ open: false });
+                await saveFile(message.file || message.voice || message.gif);
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5"
+            >
+              <Download className="w-4 h-4" /> Download
+            </button>
+            <button
+              onClick={async () => {
                 try {
                   await navigator.clipboard.writeText(
                     message.text ||
@@ -474,6 +483,13 @@ export default function MessageBubble({
         >
           <button className="absolute top-5 right-5 p-2 rounded-full bg-white/10 hover:bg-white/20 transition">
             <X className="w-5 h-5" />
+          </button>
+          <button
+            className="absolute top-5 left-5 p-2 rounded-full bg-white/10 hover:bg-white/20 transition z-20"
+            onClick={(e) => { e.stopPropagation(); saveFile(file); }}
+            title="Download image"
+          >
+            <Download className="w-5 h-5" />
           </button>
           <img
             src={file.url}
