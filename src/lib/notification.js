@@ -134,6 +134,11 @@ export const showBrowserNotification = async ({
   onClick,
   force = false,
   chatUrl = '/',
+  messageId,
+  user,
+  chat,
+  reply,
+  canReply = true,
 } = {}) => {
 
   if (typeof Notification === 'undefined') {
@@ -152,13 +157,14 @@ export const showBrowserNotification = async ({
 
   const opts = {
     body: body || '',
-    icon: icon || '/icon.svg',
-    badge: '/icon.svg',
+    icon: icon || '/icon-192.png',
+    badge: '/icon-192.png',
     tag: tag || 'pulsechat',
     renotify: true,
     silent: false,
-    data: { url: chatUrl },
-    ...(tag?.startsWith('chat-') ? { actions: [{ action: 'reply', title: 'Reply in app' }, { action: 'open', title: 'Open' }] } : {}),
+    requireInteraction: !!reply,
+    data: { url: chatUrl, messageId, user, chat, reply },
+    ...(tag?.startsWith('chat-') ? { actions: !canReply ? [{ action: 'open', title: 'Open chat' }] : reply ? [{ action: 'reply', type: 'text', title: 'Reply', placeholder: 'Type a reply…' }, { action: 'open', title: 'Open chat' }] : [{ action: 'reply', title: 'Reply' }, { action: 'open', title: 'Open chat' }] } : {}),
     ...(tag?.startsWith('call-') ? { requireInteraction: true } : {}),
   };
 
@@ -168,6 +174,8 @@ export const showBrowserNotification = async ({
       try {
         const reg = await navigator.serviceWorker.getRegistration();
         if (reg?.active && reg.showNotification) {
+          const existing = await reg.getNotifications({ tag: opts.tag });
+          if (messageId && existing.some((notification) => notification.data?.messageId === messageId)) return true;
           await reg.showNotification(title || 'PulseChat', opts);
           console.log('[notif] shown via SW');
           return true;
@@ -183,7 +191,8 @@ export const showBrowserNotification = async ({
     n.onclick = () => {
       window.focus();
       n.close();
-      onClick?.();
+      if (onClick) onClick();
+      else window.location.assign(chatUrl);
     };
     setTimeout(() => n.close(), 8000);
     return n;

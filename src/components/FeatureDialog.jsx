@@ -3,7 +3,7 @@ import { Phone, Video, Users, Star, Check, Trash2, Plus, Eye, Ban, Eraser, Downl
 import Modal from './Modal';
 import Avatar from './Avatar';
 import { formatTime, shortPreview } from '../lib/format';
-import { getPermission, requestPermission } from '../lib/notification';
+import { getPermission, requestPermission, showBrowserNotification } from '../lib/notification';
 import { enablePush } from '../lib/push';
 import GroupTools from './GroupTools';
 import CameraCapture from './CameraCapture';
@@ -276,6 +276,10 @@ export default function FeatureDialog({
             </button>
           )}
           {notificationResult && <p className="text-xs text-slate-300">{notificationResult}</p>}
+          {getPermission() === 'granted' && <button type="button" className="btn-secondary w-full"
+            onClick={() => showBrowserNotification({ title: 'PulseChat', body: 'Notifications are enabled. You will receive alerts for new messages.', tag: 'notification-test', force: true })}>
+            Test notification
+          </button>}
           <button
             type="button"
             className="btn-secondary w-full"

@@ -17,7 +17,7 @@ import {
   unlockAudio,
 } from './lib/notification';
 import { shortPreview } from './lib/format';
-import { enablePush } from './lib/push';
+import { enablePush, isPushEnabled, syncNotificationAccount, clearNotificationAccount, notificationReplyContext, readNotificationDraft } from './lib/push';
 import WorkDialog, { workDialogTypes } from './components/WorkDialog';
 import AppLock from './components/AppLock';
 import DeviceLinkApproval from './components/DeviceLinkApproval';
@@ -80,7 +80,6 @@ export default function Messenger() {
     sessionRef = useRef(null),
     callRef = useRef(null);
   const latest = useRef({}),
-    toastTimer = useRef(),
     iceQueue = useRef(new Map()),
     knownIds = useRef(new Set()),
     typingTimers = useRef({});
@@ -96,9 +95,7 @@ export default function Messenger() {
   };
   callRef.current = call;
   const notice = useCallback((preview, from = 'PulseChat') => {
-    clearTimeout(toastTimer.current);
     setToast({ from, preview, time: '' });
-    toastTimer.current = setTimeout(() => setToast(null), 5000);
   }, []);
   useEffect(() => {
     const value = ['daylight', 'midnight', 'sage', 'ocean', 'blush', 'custom'].includes(theme) ? theme : 'daylight';
@@ -218,7 +215,6 @@ export default function Messenger() {
     document.addEventListener('pointerdown', handler, { once: true });
     return () => {
       document.removeEventListener('pointerdown', handler);
-      clearTimeout(toastTimer.current);
     };
   }, []);
   useEffect(() => {
@@ -243,6 +239,7 @@ export default function Messenger() {
         }
         if (!res?.ok) {
           if (res?.code === 'SESSION_EXPIRED') {
+            clearNotificationAccount().catch(() => {});
             setAuthError(res.error);
             localStorage.removeItem(USER_KEY);
             setMe(null);
@@ -342,21 +339,32 @@ export default function Messenger() {
         return;
       const target = [...state.users, ...state.groups].find((u) => u.phone === targetId);
       const senderName = target?.name || msg.fromName;
+      const canReply = !target?.settings?.adminsOnly || target.admins?.includes(me.phone);
       const preview = `${msg.to.startsWith('group:') ? `${msg.fromName}: ` : ''}${shortPreview(msg)}`;
-      playSound();
-      showBrowserNotification({
-        title: senderName,
-        body: preview,
-        icon: target?.avatarUrl || '/icon-192.png',
-        tag: `chat-${msg.roomId}`,
-        force: true,
-        chatUrl: `/?chat=${encodeURIComponent(targetId)}`,
-        onClick: () => setSelectedId(targetId),
-      });
+      const foreground = document.visibilityState === 'visible' && document.hasFocus();
+      if (foreground) playSound();
+      if (!foreground && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        const notify = async () => {
+          const state = latest.current;
+          if (state.me?.token !== me.token || state.locked || state.preferences.muted.includes(targetId) || state.preferences.blocked.includes(msg.from) ||
+              state.preferences.focusUntil > Date.now() ||
+              (state.selectedId === targetId && document.visibilityState === 'visible' && document.hasFocus())) return;
+          const registration = await navigator.serviceWorker?.getRegistration();
+          const existing = await registration?.getNotifications({ tag: `chat-${msg.roomId}` });
+          if (existing?.some((notification) => notification.data?.messageId === msg.id)) return;
+          const reply = await notificationReplyContext(targetId, msg.id).catch(() => null);
+          await showBrowserNotification({
+            title: senderName, body: preview, icon: target?.avatarUrl || '/icon-192.png',
+            tag: `chat-${msg.roomId}`, force: true, chatUrl: `/?chat=${encodeURIComponent(targetId)}`,
+            onClick: () => setSelectedId(targetId), messageId: msg.id, user: me.phone, chat: targetId, reply, canReply,
+          });
+        };
+        // Push normally handles background tabs. Fall back if delivery/visibility raced.
+        if (isPushEnabled()) setTimeout(() => notify().catch(() => {}), 1800);
+        else notify().catch(() => {});
+      }
       if (document.visibilityState === 'visible') {
-        clearTimeout(toastTimer.current);
-        setToast({ from: senderName, avatar: target?.avatarUrl, preview, time: '', canReply: true, _raw: msg, targetId });
-        toastTimer.current = setTimeout(() => setToast(null), 6000);
+        setToast({ from: senderName, avatar: target?.avatarUrl, preview, time: '', canReply, _raw: msg, targetId });
       }
     });
     socket.on('chat_cleared', ({ roomId: rid }) => setConversations((p) => ({ ...p, [rid]: [] })));
@@ -515,7 +523,26 @@ export default function Messenger() {
     };
   }, [activeMessages, selectedId, connected, me?.phone, lock.locked]);
   useEffect(() => {
-    const handler = (e) => {
+    const handler = async (e) => {
+      if (e.data?.type === 'OPEN_QUICK_REPLY') {
+        const state = latest.current;
+        if (e.data.user && state.me?.phone !== e.data.user) return;
+        if (!/^(\d{10}|google:[A-Za-z0-9_-]{5,128}|group:[a-f0-9-]{36})$/.test(e.data.chat || '')) return;
+        if (state.locked) {
+          setSelectedId(e.data.chat);
+          const url = new URL(window.location.href);
+          url.searchParams.set('chat', e.data.chat); url.searchParams.set('reply', '1');
+          if (e.data.messageId) url.searchParams.set('replyTo', e.data.messageId);
+          if (e.data.draftId) url.searchParams.set('notificationDraft', e.data.draftId);
+          window.history.replaceState(null, '', url);
+          return;
+        }
+        const draft = e.data.draftId ? await readNotificationDraft(e.data.draftId).catch(() => null) : null;
+        const target = [...state.users, ...state.groups].find((user) => user.phone === e.data.chat);
+        setToast({ from: target?.name || 'Quick reply', preview: 'Reply to this conversation', targetId: e.data.chat,
+          _raw: { id: e.data.messageId }, clientId: draft?.clientId, canReply: true, autoFocus: true, draft: draft?.text || '', error: draft?.error || '' });
+        return;
+      }
       if (e.data?.type === 'OPEN_CHAT' && /^(\d{10}|google:[A-Za-z0-9_-]{5,128}|group:[a-f0-9-]{36})$/.test(e.data.chat || '')) {
         setSelectedId(e.data.chat);
         if (e.data.reply) setTimeout(() => document.querySelector('[data-message-composer]')?.focus(), 200);
@@ -526,18 +553,32 @@ export default function Messenger() {
   }, []);
 
   useEffect(() => {
+    if (!me?.token) return;
+    syncNotificationAccount().catch(() => {});
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') enablePush().catch(() => {});
+  }, [me?.phone, me?.token, lock.enabled]);
+
+  useEffect(() => {
     if (!selectedId || lock.locked) return;
     const url = new URL(window.location.href);
     if (url.searchParams.get('reply') !== '1' || url.searchParams.get('chat') !== selectedId) return;
-    const timer = setTimeout(() => {
-      const composer = document.querySelector('[data-message-composer]');
-      if (!composer) return;
-      composer.focus();
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const target = [...users, ...groups].find((user) => user.phone === selectedId);
+      if (!target) return;
+      const draftId = url.searchParams.get('notificationDraft');
+      const draft = draftId ? await readNotificationDraft(draftId).catch(() => null) : null;
+      if (cancelled) return;
+      setToast({ from: target.name, preview: 'Reply to this conversation', targetId: selectedId,
+        canReply: true, autoFocus: true, clientId: draft?.clientId, draft: draft?.text || '', error: draft?.error || '',
+        _raw: { id: url.searchParams.get('replyTo') || draft?.messageId },
+      });
       url.searchParams.delete('reply');
+      url.searchParams.delete('replyTo'); url.searchParams.delete('notificationDraft');
       window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
     }, 400);
-    return () => clearTimeout(timer);
-  }, [selectedId, lock.locked]);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [selectedId, lock.locked, users, groups]);
 
   const sendTo = async (targetId, payload) => {
     const { files, ...rest } = payload;
@@ -733,6 +774,7 @@ export default function Messenger() {
     }
   };
   const logout = async () => {
+    await clearNotificationAccount();
     endCall();
     groupCalling.leave();
     try {
@@ -862,12 +904,12 @@ export default function Messenger() {
       </div>
       <Toast
         toast={toast}
-        onClose={() => setToast(null)}
-        onOpen={() => {
-          if (toast?.targetId) setSelectedId(toast.targetId);
-          setToast(null);
+        onClose={(closed) => setToast((current) => !closed || current === closed ? null : current)}
+        onOpen={(opened) => {
+          if (opened?.targetId) setSelectedId(opened.targetId);
+          setToast((current) => current === opened ? null : current);
         }}
-        onReply={(text) => sendTo(toast.targetId, { text })}
+        onReply={(text, source) => sendTo(source.targetId, { text, notificationReply: true, clientId: source.clientId, replyTo: source._raw?.id ? { id: source._raw.id } : null })}
       />
       <NotificationPrompt />
       <InstallAppPrompt />
