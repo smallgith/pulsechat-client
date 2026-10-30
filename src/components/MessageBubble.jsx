@@ -54,10 +54,14 @@ export default function MessageBubble({
   const [ctx, setCtx] = useState({ open: false, x: 0, y: 0 });
   const [copyError, setCopyError] = useState('');
   const [downloadError, setDownloadError] = useState('');
+  const [downloading, setDownloading] = useState(false);
   const saveFile = async (data) => {
+    if (downloading) return;
     setDownloadError('');
+    setDownloading(true);
     try { await downloadAttachment(data); }
     catch (error) { setDownloadError(error.message); }
+    finally { setDownloading(false); }
   };
   const pressTimer = useRef(null);
   const pressStart = useRef(null);
@@ -226,9 +230,9 @@ export default function MessageBubble({
             </button>
           )}
 
-          {(file || voice) && (
-            <button className="attachment-download" type="button" onClick={() => saveFile(file || voice)} title="Download attachment">
-              <Download size={14} /> Download {file?.name ? file.name.slice(0, 24) : 'voice message'}
+          {(file || voice || gif) && (
+            <button className="attachment-download" type="button" disabled={downloading} onClick={() => saveFile(file || voice || { ...gif, name: 'animation.gif' })} title="Download attachment" aria-busy={downloading}>
+              <Download size={14} /> {downloading ? 'Preparing download…' : `Download ${file?.name ? file.name.slice(0, 24) : voice ? 'voice message' : 'GIF'}`}
             </button>
           )}
           {downloadError && <p role="alert" className="text-xs px-2 text-red-300">{downloadError}</p>}
@@ -360,15 +364,16 @@ export default function MessageBubble({
                 </span>
               ))}
             </div>}
-            <button
+            {(file || voice || gif) && <button
+              disabled={downloading}
               onClick={async () => {
                 setCtx({ open: false });
-                await saveFile(message.file || message.voice || message.gif);
+                await saveFile(file || voice || { ...gif, name: 'animation.gif' });
               }}
               className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5"
             >
               <Download className="w-4 h-4" /> Download
-            </button>
+            </button>}
             <button
               onClick={async () => {
                 try {
@@ -497,6 +502,7 @@ export default function MessageBubble({
             onClick={(e) => e.stopPropagation()}
             className="max-h-[88vh] max-w-[92vw] rounded-2xl shadow-2xl"
           />
+          {downloadError && <p role="alert" className="absolute bottom-6 mx-4 rounded-lg bg-red-950 p-3 text-sm text-white">{downloadError}</p>}
         </div>
       )}
     </>

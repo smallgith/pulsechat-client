@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Phone, Video, Users, Star, Check, Trash2, Plus, Eye, Ban, Eraser } from 'lucide-react';
+import { Phone, Video, Users, Star, Check, Trash2, Plus, Eye, Ban, Eraser, Download } from 'lucide-react';
 import Modal from './Modal';
 import Avatar from './Avatar';
 import { formatTime, shortPreview } from '../lib/format';
@@ -9,6 +9,7 @@ import GroupTools from './GroupTools';
 import CameraCapture from './CameraCapture';
 import { uploadFile, SOCKET_URL, authHeaders } from '../lib/socket';
 import GoogleSignInButton from './GoogleSignInButton';
+import { downloadAttachment } from '../lib/download-attachment';
 
 export default function FeatureDialog({
   dialog,
@@ -72,6 +73,15 @@ export default function FeatureDialog({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('');
   const [viewing, setViewing] = useState(null);
+  const [downloading, setDownloading] = useState(null);
+  const saveAttachment = async (message) => {
+    if (downloading) return;
+    setDownloading(message.id); setError('');
+    try {
+      await downloadAttachment(message.file || message.voice || { ...message.gif, name: 'animation.gif' });
+    } catch (e) { setError(e.message); }
+    finally { setDownloading(null); }
+  };
   const [notificationResult, setNotificationResult] = useState('');
   const [googleClientId, setGoogleClientId] = useState('');
   const [googleLinkDone, setGoogleLinkDone] = useState(false);
@@ -799,14 +809,15 @@ export default function FeatureDialog({
                 )}
                 {m.text && <p className="text-sm whitespace-pre-wrap break-words">{m.text}</p>}
                 {(m.file || m.voice || m.gif) && (
-                  <a
-                    className="text-xs text-brand-400 underline block"
-                    href={(m.file || m.voice || m.gif).url}
-                    target="_blank"
-                    rel="noreferrer"
+                  <button
+                    type="button"
+                    className="text-xs text-brand-400 underline flex items-center gap-2"
+                    onClick={() => saveAttachment(m)}
+                    disabled={!!downloading}
+                    aria-busy={downloading === m.id}
                   >
-                    {shortPreview(m) || 'Open attachment'}
-                  </a>
+                    <Download size={14} /> {downloading === m.id ? 'Preparing download…' : `Download ${shortPreview(m) || 'attachment'}`}
+                  </button>
                 )}
               </div>
             ))}

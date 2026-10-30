@@ -38,7 +38,7 @@ test('two people can message, manage groups, share files and make real WebRTC ca
   await menu(a, 'Search messages'); await a.getByPlaceholder('Search in messages…').fill('Edited'); await expect(a.getByText('1/1', { exact: true })).toBeVisible();
   await a.getByRole('button', { name: 'Close message search' }).click();
   const fileInput = a.locator('input[type="file"]').first(); await fileInput.setInputFiles([{ name: 'one.txt', mimeType: 'text/plain', buffer: Buffer.from('First attachment') }, { name: 'two.txt', mimeType: 'text/plain', buffer: Buffer.from('Second attachment') }]);
-  await a.getByRole('button', { name: 'Send', exact: true }).click(); await expect(b.getByRole('link').filter({ hasText: 'one.txt' })).toBeVisible(); await expect(b.getByRole('link').filter({ hasText: 'two.txt' })).toBeVisible();
+  await a.getByRole('button', { name: 'Send', exact: true }).click(); await expect(b.getByRole('button', { name: /^one\.txt/ })).toBeVisible(); await expect(b.getByRole('button', { name: /^two\.txt/ })).toBeVisible();
   await a.getByRole('button', { name: 'Record voice', exact: true }).click(); await expect(a.getByText('Recording', { exact: true })).toBeVisible();
   await expect(a.getByText('00:01', { exact: true })).toBeVisible();
   await a.getByRole('button', { name: 'Send voice message', exact: true }).click(); await expect(b.locator('audio[controls]')).toHaveCount(1);

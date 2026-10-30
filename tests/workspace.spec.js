@@ -153,11 +153,11 @@ test('workspace cards, drag/drop, resumable uploads, invites, themes and PIN loc
   await expect(a.getByRole('button', { name: 'Resume big-board.bin' })).toBeVisible();
   release();
   await a.getByRole('button', { name: 'Resume big-board.bin' }).click();
-  await expect(b.getByRole('link').filter({ hasText: 'big-board.bin' })).toBeVisible();
-  await expect(b.getByRole('link').filter({ hasText: 'drop-notes.txt' })).toBeVisible();
+  await expect(b.getByRole('button', { name: /big-board.bin/ }).first()).toBeVisible();
+  await expect(b.getByRole('button', { name: /drop-notes.txt/ }).first()).toBeVisible();
   await a.unroute('**/api/uploads/**');
   const fileDownload = b.waitForEvent('download');
-  await b.getByRole('link').filter({ hasText: 'big-board.bin' }).click();
+  await b.getByRole('button', { name: /big-board.bin/ }).first().click();
   const downloaded = await fileDownload;
   const filePath = await downloaded.path();
   expect(fs.statSync(filePath).size).toBe(7 * 1024 * 1024);
