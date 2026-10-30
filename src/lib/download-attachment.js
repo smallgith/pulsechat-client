@@ -15,8 +15,35 @@ export async function downloadAttachment(file) {
     anchor.remove();
     return;
   }
-  // Cross-origin hosted media: fetch as blob then create a download link.
-  if (Number(file.size || 0) > 80 * 1024 * 1024) {
+  // Cross-origin hosted media: try blob fetch (needs CORS). Fall back to opening in new tab.
+  try {
+    if (Number(file.size || 0) > 80 * 1024 * 1024) {
+      const anchor = document.createElement('a');
+      anchor.href = url.href;
+      anchor.rel = 'noopener noreferrer';
+      anchor.target = '_blank';
+      anchor.download = String(file.name || 'PulseChat-file').replace(/[\/\\]/g, '_').slice(0, 180);
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      return;
+    }
+    const response = await fetch(url.href, { mode: 'cors', credentials: 'omit' });
+    if (!response.ok) throw new Error(`File is unavailable (${response.status}).`);
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    try {
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = String(file.name || 'PulseChat-file').replace(/[\/\\]/g, '_').slice(0, 180);
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+    }
+  } catch (e) {
+    // CORS likely blocked by provider — open media in a new tab so user can save manually.
     const anchor = document.createElement('a');
     anchor.href = url.href;
     anchor.rel = 'noopener noreferrer';
@@ -25,25 +52,5 @@ export async function downloadAttachment(file) {
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
-    return;
-  }
-  let response;
-  try {
-    response = await fetch(url.href, { mode: 'cors', credentials: 'omit' });
-  } catch {
-    throw new Error('Provider blocked file download. Open the media and use Save as.');
-  }
-  if (!response.ok) throw new Error(`File is unavailable (${response.status}).`);
-  const blob = await response.blob();
-  const blobUrl = URL.createObjectURL(blob);
-  try {
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = String(file.name || 'PulseChat-file').replace(/[\/\\]/g, '_').slice(0, 180);
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  } finally {
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
   }
 }

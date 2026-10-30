@@ -152,22 +152,42 @@ export default function MessageBubble({
 
           {/* image */}
           {isImage && (
-            <button
-              onClick={() => setLightbox(true)}
-              className="block w-full overflow-hidden rounded-xl"
-            >
-              <img
-                src={file.url}
-                alt={file.name}
-                loading="lazy"
-                className="w-full max-h-80 object-cover hover:scale-[1.02] transition duration-300"
-              />
-            </button>
+            <div className="relative block w-full overflow-hidden rounded-xl group">
+              <button
+                onClick={() => setLightbox(true)}
+                className="block w-full overflow-hidden rounded-xl"
+              >
+                <img
+                  src={file.url}
+                  alt={file.name}
+                  loading="lazy"
+                  className="w-full max-h-80 object-cover hover:scale-[1.02] transition duration-300"
+                />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); saveFile(file); }}
+                className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Download image"
+              >
+                <Download size={14} />
+              </button>
+            </div>
           )}
 
           {/* video */}
           {isVideo && (
-            <video src={file.url} controls className="w-full max-h-80 rounded-xl bg-black" />
+            <div className="relative w-full max-h-80 rounded-xl group">
+              <video src={file.url} controls className="w-full max-h-80 rounded-xl bg-black" />
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); saveFile(file); }}
+                className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Download video"
+              >
+                <Download size={14} />
+              </button>
+            </div>
           )}
           {isAudio && (
             <div className="px-2.5 py-2 min-w-[220px]">
