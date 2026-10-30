@@ -1,11 +1,44 @@
 {
-  "name": "PulseChat",
+  "name": "PulseChat — Premium Messaging",
   "short_name": "PulseChat",
-  "description": "Conversations, groups, voice and video calls",
+  "description": "Real-time chat with calls, voice messages, GIFs",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#0b1120",
-  "theme_color": "#059669",
-  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "portrait",
+  "background_color": "#05080f",
+  "theme_color": "#10b981",
+  "categories": ["communication", "social", "productivity"],
+  "shortcuts": [
+    {
+      "name": "New chat",
+      "short_name": "New chat",
+      "description": "Start a new conversation",
+      "url": "/?new=1",
+      "icons": [{ "src": "/icon.svg", "sizes": "192x192", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Status",
+      "short_name": "Status",
+      "description": "Share a status update",
+      "url": "/?status=1",
+      "icons": [{ "src": "/icon.svg", "sizes": "192x192", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Calls",
+      "short_name": "Calls",
+      "description": "Voice and video calls",
+      "url": "/?calls=1",
+      "icons": [{ "src": "/icon.svg", "sizes": "192x192", "type": "image/svg+xml" }]
+    }
+  ],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
 }

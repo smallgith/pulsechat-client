@@ -164,8 +164,7 @@ const MessageInput = forwardRef(function MessageInput(
       sending.current = false;
       if (alive.current) {
         setBusy(false);
-        // Keep keyboard focus after Send, without stealing focus from another control.
-        if (!disabled && !document.activeElement?.closest('[role=dialog]')) {
+        if (!disabled) {
           requestAnimationFrame(() => textarea.current?.focus({ preventScroll: true }));
         }
       }

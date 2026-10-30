@@ -143,7 +143,13 @@ export default function Messenger() {
         const all = [...latest.current.users, ...latest.current.groups].filter(u => u.phone !== latest.current.me?.phone);
         if (all[Number(key)-1]) { e.preventDefault(); setSelectedId(all[Number(key)-1].phone); }
       }
-      else if (mod && e.shiftKey && key === 'f') { e.preventDefault(); window.dispatchEvent(new CustomEvent('pulsechat:search-chat')); }
+      else if (mod && key === 'n' && !e.shiftKey && !e.altKey) { e.preventDefault(); setSelectedId(null); document.querySelector('[data-message-composer]')?.focus(); }
+      else if (mod && e.shiftKey && key === 'm') { e.preventDefault(); if (selectedId) { request('preferences', { key: 'muted', value: selectedId, enabled: !preferences.muted.includes(selectedId) }); } }
+      else if (mod && e.shiftKey && key === 'p') { e.preventDefault(); if (selectedId) { request('preferences', { key: 'pinned', value: selectedId, enabled: !preferences.pinned.includes(selectedId) }); } }
+      else if (mod && e.shiftKey && key === 'a') { e.preventDefault(); if (selectedId) { request('preferences', { key: 'archived', value: selectedId, enabled: !preferences.archived.includes(selectedId) }); } }
+      else if (mod && e.shiftKey && key === 'f') { e.preventDefault(); if (selectedId) { request('preferences', { key: 'favorites', value: selectedId, enabled: !preferences.favorites.includes(selectedId) }); } }
+      else if (mod && e.shiftKey && key === 'b') { e.preventDefault(); if (selectedId) { onChatAction?.('block', latest.current.users.find((u) => u.phone === selectedId)); } }
+      else if (mod && e.shiftKey && key === 'd') { e.preventDefault(); if (selectedId) { onChatAction?.('delete', latest.current.users.find((u) => u.phone === selectedId)); } }
       else if (mod && key === 'k') { e.preventDefault(); setDialog({ type: 'command' }); }
       else if (mod && key === '/') { e.preventDefault(); setDialog({ type: 'shortcuts' }); }
       else if (mod && e.shiftKey && key === 'n') { e.preventDefault(); setDialog({ type: 'group_create' }); }
