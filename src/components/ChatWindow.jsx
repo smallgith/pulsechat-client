@@ -130,6 +130,7 @@ export default function ChatWindow({
     window.addEventListener('pulsechat:wallpaper', changed);
     return () => { cancelled = true; if (url) URL.revokeObjectURL(url); window.removeEventListener('pulsechat:wallpaper', changed); };
   }, [me, user?.phone]);
+  const mediaItems = useMemo(() => messages.filter(m => !m.deleted && (m.file?.mime?.startsWith('image/') || m.file?.mime?.startsWith('video/') || m.gif)), [messages]);
   useEffect(() => {
     const open = () => {
       const first = mediaItems.find(m => m.file?.mime?.startsWith('image/') || m.gif) || mediaItems[0];
@@ -138,7 +139,6 @@ export default function ChatWindow({
     window.addEventListener('pulsechat:open-gallery', open);
     return () => window.removeEventListener('pulsechat:open-gallery', open);
   }, [mediaItems]);
-  const mediaItems = useMemo(() => messages.filter(m => !m.deleted && (m.file?.mime?.startsWith('image/') || m.file?.mime?.startsWith('video/') || m.gif)), [messages]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQ, setSearchQ] = useState('');
   const [searchIdx, setSearchIdx] = useState(0);
