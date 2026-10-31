@@ -130,6 +130,7 @@ export const showBrowserNotification = async ({
   title,
   body,
   icon,
+  image,
   tag,
   onClick,
   force = false,
@@ -158,6 +159,7 @@ export const showBrowserNotification = async ({
   const opts = {
     body: body || '',
     icon: icon || '/icon-192.png',
+    ...(image && /^https:\/\//.test(image) ? { image } : {}),
     badge: '/icon-192.png',
     tag: tag || 'pulsechat',
     renotify: true,

@@ -24,7 +24,7 @@ function StreamTile({ stream, name, muted = false, video = false }) {
   );
 }
 
-export default function GroupCallPanel({ call, localStream, remotes, onAccept, onLeave, onNotice, users }) {
+export default function GroupCallPanel({ call, localStream, remotes, onAccept, onLeave, onNotice, users, participants = [] }) {
   const [muted, setMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
   useEffect(() => {
@@ -51,7 +51,7 @@ export default function GroupCallPanel({ call, localStream, remotes, onAccept, o
         <div className="flex gap-3 items-center mb-5">
           <span className="p-3 bg-violet-600 rounded-2xl"><Users size={22}/></span>
           <div><h2 className="text-lg font-semibold">{call.groupName || 'Group call'}</h2>
-            <p className="text-sm text-slate-400">{incoming ? 'Incoming group call' : `${call.type === 'video' ? 'Video' : 'Voice'} call · ${Object.keys(remotes).length + 1} joined · Up to 4 people`}</p></div>
+            <p className="text-sm text-slate-400">{incoming ? 'Incoming group call' : `${call.type === 'video' ? 'Video' : 'Voice'} call · ${participants.length || Object.keys(remotes).length + 1} joined · Up to 4 people`}</p></div>
         </div>
         {incoming ? (
           <div className="py-8 flex items-center justify-center gap-5">
@@ -65,6 +65,7 @@ export default function GroupCallPanel({ call, localStream, remotes, onAccept, o
               {Object.entries(remotes).map(([phone, stream]) => (
                 <StreamTile key={phone} stream={stream} name={users.find(u => u.phone === phone)?.name || 'Participant'} video={call.type === 'video'} />
               ))}
+              {participants.filter(phone => !Object.keys(remotes).includes(phone) && phone !== users.find(u => u.isMe)?.phone).length > 1 && <p className="text-xs text-slate-400">Joining media streams…</p>}
               {!Object.keys(remotes).length && <div className="rounded-2xl bg-slate-900/70 min-h-36 flex items-center justify-center text-slate-400 text-sm p-5">Waiting for group members to join…</div>}
             </div>
             <div className="flex justify-center items-center gap-4 pt-5">

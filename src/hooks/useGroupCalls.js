@@ -9,6 +9,7 @@ export function useGroupCalls({ connected, socketRef, request, me, notice, direc
   const [call, setCall] = useState(null);
   const [localStream, setLocalStream] = useState(null);
   const [remotes, setRemotes] = useState({});
+  const [participants, setParticipants] = useState([]);
   const active = useRef(null);
   const local = useRef(null);
   const sessions = useRef(new Map());
@@ -24,6 +25,7 @@ export function useGroupCalls({ connected, socketRef, request, me, notice, direc
     setCall(null);
     setLocalStream(null);
     setRemotes({});
+    setParticipants([]);
   }, []);
 
   const signal = useCallback((to, data) => {
@@ -68,7 +70,7 @@ export function useGroupCalls({ connected, socketRef, request, me, notice, direc
       await startMedia(type);
       const result = await request('group_call_start', { groupId: group.phone, type });
       const info = { callId: result.callId, groupId: group.phone, groupName: group.name, type, state: 'active' };
-      active.current = info; setCall(info);
+      active.current = info; setCall(info); setParticipants([me.phone]);
     } catch (error) { close(); throw error; }
   };
 
@@ -79,7 +81,7 @@ export function useGroupCalls({ connected, socketRef, request, me, notice, direc
       await startMedia(invite.type);
       const result = await request('group_call_join', { callId: invite.callId });
       const info = { ...invite, state: 'active', groupName: result.groupName };
-      active.current = info; setCall(info);
+      active.current = info; setCall(info); setParticipants([...result.participants, me.phone]);
       for (const phone of result.participants) {
         const peer = ensurePeer(phone);
         const offer = await peer.createOffer();
@@ -126,8 +128,12 @@ export function useGroupCalls({ connected, socketRef, request, me, notice, direc
         pendingIce.current.delete(from);
       } catch (error) { notice(`Group call connection failed: ${error.message}`); }
     };
+    const joined = ({ callId, phone }) => {
+      if (active.current?.callId === callId) setParticipants(prev => [...new Set([...prev, phone])]);
+    };
     const left = ({ callId, phone }) => {
       if (active.current?.callId !== callId) return;
+      setParticipants(prev => prev.filter(p => p !== phone));
       sessions.current.get(phone)?.destroy();
       sessions.current.delete(phone);
       pendingIce.current.delete(phone);
@@ -137,12 +143,14 @@ export function useGroupCalls({ connected, socketRef, request, me, notice, direc
     const disconnected = () => close();
     socket.on('group_call_invite', invite);
     socket.on('group_call_signal', received);
+    socket.on('group_call_member_joined', joined);
     socket.on('group_call_peer_left', left);
     socket.on('group_call_ended', ended);
     socket.on('disconnect', disconnected);
     return () => {
       socket.off('group_call_invite', invite);
       socket.off('group_call_signal', received);
+      socket.off('group_call_member_joined', joined);
       socket.off('group_call_peer_left', left);
       socket.off('group_call_ended', ended);
       socket.off('disconnect', disconnected);
@@ -150,5 +158,5 @@ export function useGroupCalls({ connected, socketRef, request, me, notice, direc
   }, [connected, me?.phone, socketRef, ensurePeer, signal, notice, close, directCallRef]);
 
   useEffect(() => () => close(), [close]);
-  return { call, activeRef: active, localStream, remotes, start, answer, leave };
+  return { call, activeRef: active, localStream, remotes, participants, start, answer, leave };
 }

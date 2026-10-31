@@ -22,6 +22,7 @@ import VoiceNotePlayer from './VoiceNotePlayer';
 import EmojiPicker from './EmojiPicker';
 import { downloadAttachment } from '../lib/download-attachment';
 import { resolveMediaUrl } from '../lib/media-url';
+import RichText from './RichText';
 
 function Ticks({ status }) {
   if (status === 'seen') return <CheckCheck className="w-3.5 h-3.5 text-sky-400" />;
@@ -48,8 +49,9 @@ export default function MessageBubble({
   onOpenContact,
   onTask,
   onDecision,
+  cluster = null,
+  onOpenMedia,
 }) {
-  const [lightbox, setLightbox] = useState(false);
   const [reactOpen, setReactOpen] = useState(false);
   const [allReactions, setAllReactions] = useState(false);
   const [ctx, setCtx] = useState({ open: false, x: 0, y: 0 });
@@ -87,8 +89,8 @@ export default function MessageBubble({
     e.preventDefault();
     setCtx({
       open: true,
-      x: Math.max(8, Math.min(e.clientX, window.innerWidth - 210)),
-      y: Math.max(8, Math.min(e.clientY, window.innerHeight - 370)),
+      x: Math.max(8, Math.min(e.clientX, window.innerWidth - 280)),
+      y: Math.max(8, Math.min(e.clientY, window.innerHeight - 510)),
     });
   };
 
@@ -157,10 +159,18 @@ export default function MessageBubble({
           />
 
           {/* image */}
-          {isImage && (
+          {cluster?.length > 1 ? (
+            <div className="media-mosaic" style={{ gridTemplateColumns: cluster.length === 2 ? 'repeat(2,1fr)' : 'repeat(2,1fr)' }}>
+              {cluster.slice(0,4).map((item, n) => { const mediaItem = item.file || item.gif; return (
+                <button type="button" key={item.id} className="media-mosaic-tile" onClick={() => onOpenMedia?.(item.id)} aria-label={`Open media ${n+1} of ${cluster.length}`}>
+                  {mediaItem.mime?.startsWith('video/') ? <video src={resolveMediaUrl(mediaItem.url)} muted playsInline className="w-full h-full object-cover"/> : <img src={resolveMediaUrl(mediaItem.url)} alt={mediaItem.name || 'Shared image'} loading="lazy" className="w-full h-full object-cover"/>}
+                  {n === 3 && cluster.length > 4 && <span className="media-mosaic-more">+{cluster.length - 4}</span>}
+                </button>); })}
+            </div>
+          ) : isImage && (
             <div className="relative block w-full overflow-hidden rounded-xl group">
               <button
-                onClick={() => setLightbox(true)}
+                onClick={() => onOpenMedia?.(message.id)}
                 className="block w-full overflow-hidden rounded-xl"
               >
                 <img
@@ -182,7 +192,7 @@ export default function MessageBubble({
           )}
 
           {/* video */}
-          {isVideo && (
+          {!cluster && isVideo && (
             <div className="relative w-full max-h-80 rounded-xl group">
               <video src={file.url} controls className="w-full max-h-80 rounded-xl bg-black" />
               <button
@@ -203,7 +213,7 @@ export default function MessageBubble({
           )}
 
           {/* GIF */}
-          {gif && (
+          {!cluster && gif && (
             <div className="rounded-xl overflow-hidden">
               <img src={gif.url} alt="gif" className="w-full max-h-72 object-contain" />
             </div>
@@ -242,21 +252,7 @@ export default function MessageBubble({
           <div className="px-2.5 pt-1 pb-0.5">
             {message.text && (
               <p className="text-[14.5px] leading-relaxed whitespace-pre-wrap break-words">
-                {message.text.split(/(https?:\/\/[^\s<>]+)/g).map((part, i) =>
-                  /^https?:\/\//.test(part) ? (
-                    <a
-                      key={i}
-                      href={part}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="underline underline-offset-2 break-all"
-                    >
-                      {part}
-                    </a>
-                  ) : (
-                    part
-                  )
-                )}
+                <RichText value={message.text} />
               </p>
             )}
             <div
@@ -353,7 +349,7 @@ export default function MessageBubble({
         <>
           <div className="fixed inset-0 z-[109]" onClick={() => setCtx({ open: false })} />
           <div
-            className="fixed z-[110] py-1 glass rounded-xl shadow-2xl border border-white/10 animate-pop-in min-w-[180px]"
+            className="fixed z-[110] py-1 glass rounded-xl shadow-2xl border border-white/10 animate-pop-in w-[min(270px,calc(100vw-20px))] max-h-[min(490px,calc(100dvh-32px))] overflow-y-auto scroll-thin text-left"
             style={{ left: ctx.x, top: ctx.y }}
             onMouseDown={(e) => e.stopPropagation()}
           >
@@ -372,7 +368,7 @@ export default function MessageBubble({
                 setCtx({ open: false });
                 await saveFile(file || voice || { ...gif, name: 'animation.gif' });
               }}
-              className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5"
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm text-left break-words hover:bg-white/5"
             >
               <Download className="w-4 h-4" /> Download
             </button>}
@@ -391,7 +387,7 @@ export default function MessageBubble({
                   setCopyError('Clipboard unavailable in this browser.');
                 }
               }}
-              className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5"
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm text-left break-words hover:bg-white/5"
             >
               <Copy className="w-4 h-4" /> Copy text
             </button>
@@ -400,12 +396,12 @@ export default function MessageBubble({
                 onReply?.(message);
                 setCtx({ open: false });
               }}
-              className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5"
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm text-left break-words hover:bg-white/5"
             >
               <Reply className="w-4 h-4" /> Reply
             </button>
             <button
-              className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5"
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm text-left break-words hover:bg-white/5"
               onClick={() => {
                 onForward?.(message);
                 setCtx({ open: false });
@@ -415,7 +411,7 @@ export default function MessageBubble({
               Forward
             </button>
             <button
-              className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5"
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm text-left break-words hover:bg-white/5"
               onClick={() => {
                 onStar?.(message);
                 setCtx({ open: false });
@@ -425,7 +421,7 @@ export default function MessageBubble({
               {starred ? 'Unstar message' : 'Star message'}
             </button>
             <button
-              className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5"
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm text-left break-words hover:bg-white/5"
               onClick={() => {
                 onTask?.(message);
                 setCtx({ open: false });
@@ -435,7 +431,7 @@ export default function MessageBubble({
               Turn into a task
             </button>
             <button
-              className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5"
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm text-left break-words hover:bg-white/5"
               onClick={() => {
                 onDecision?.(message);
                 setCtx({ open: false });
@@ -446,7 +442,7 @@ export default function MessageBubble({
             </button>
             {mine && message.text && (
               <button
-                className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-white/5"
+                className="w-full flex items-center gap-3 px-3 py-2 text-sm text-left break-words hover:bg-white/5"
                 onClick={() => {
                   onEdit?.(message);
                   setCtx({ open: false });
@@ -464,7 +460,7 @@ export default function MessageBubble({
                   onDelete?.(message, true);
                   setCtx({ open: false });
                 }}
-                className="w-full flex items-center gap-3 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10"
+                className="w-full flex items-center gap-3 px-3 py-2 text-sm text-left break-words text-red-400 hover:bg-red-500/10"
               >
                 <Trash2 className="w-4 h-4" /> Delete for everyone
               </button>
@@ -474,7 +470,7 @@ export default function MessageBubble({
                 onDelete?.(message, false);
                 setCtx({ open: false });
               }}
-              className="w-full flex items-center gap-3 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10"
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm text-left break-words text-red-400 hover:bg-red-500/10"
             >
               <Trash2 className="w-4 h-4" /> Delete for me
             </button>
@@ -482,31 +478,7 @@ export default function MessageBubble({
         </>
       )}
 
-      {/* lightbox */}
-      {lightbox && (
-        <div
-          onClick={() => setLightbox(false)}
-          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 animate-pop-in"
-        >
-          <button className="absolute top-5 right-5 p-2 rounded-full bg-white/10 hover:bg-white/20 transition">
-            <X className="w-5 h-5" />
-          </button>
-          <button
-            className="absolute top-5 left-5 p-2 rounded-full bg-white/10 hover:bg-white/20 transition z-20"
-            onClick={(e) => { e.stopPropagation(); saveFile(file); }}
-            title="Download image"
-          >
-            <Download className="w-5 h-5" />
-          </button>
-          <img
-            src={file.url}
-            alt={file.name}
-            onClick={(e) => e.stopPropagation()}
-            className="max-h-[88vh] max-w-[92vw] rounded-2xl shadow-2xl"
-          />
-          {downloadError && <p role="alert" className="absolute bottom-6 mx-4 rounded-lg bg-red-950 p-3 text-sm text-white">{downloadError}</p>}
-        </div>
-      )}
+
     </>
   );
 }

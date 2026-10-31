@@ -1783,3 +1783,23 @@ a:focus-visible {
 .desktop-chat-popover { position: fixed; z-index: 110; width: min(252px, calc(100vw - 20px)); padding: 6px; background: var(--surface); color: rgb(var(--text-100)); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 18px 58px rgba(25,20,40,.2); }
 .desktop-chat-popover button { width: 100%; display: flex; align-items: center; gap: 10px; text-align: left; padding: 9px 11px; border-radius: 8px; font-size: 13px; }
 .desktop-chat-popover button:hover { background: var(--soft); }
+
+/* PulseChat: photo grid, accessible context menus, desktop/PWA polish */
+.media-mosaic { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:3px; overflow:hidden; border-radius:12px; width: min(375px, 70vw); }
+.media-mosaic-tile { aspect-ratio:1 / 1; position:relative; overflow:hidden; background:#101016; min-height:0; }
+.media-mosaic-tile img,.media-mosaic-tile video { display:block; height:100%; width:100%; object-fit:cover; }
+.media-mosaic-more { position:absolute; inset:0; display:grid; place-items:center; background:#080812a8; color:#fff; font-size:28px; font-weight:700; }
+.message-bubble { overflow-wrap:anywhere; max-width:min(72%, 520px); }
+.message-bubble button { min-width:0; }
+.pulse-format-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:7px; padding:5px 12px 9px; border-top:1px solid var(--border); }
+.pulse-format-toolbar button { background:rgb(var(--brand-500) / .12); padding:6px 11px; border-radius:8px; font-size:12px; }
+.pulse-format-toolbar button:hover { background:rgb(var(--brand-500) / .22); }
+.pulse-format-color { display:flex; align-items:center; gap:7px; font-size:12px; padding:2px 8px; }
+.pulse-format-color input { width:30px; height:28px; background:transparent; cursor:pointer; }
+.pulse-media-gallery { overscroll-behavior:contain; }
+[data-theme='aurora'] { --ink-900:20 20 40; --ink-800:31 29 57; --ink-700:47 43 74; --ink-600:40 36 72; --ink-500:71 66 96; --brand-400:187 156 255; --brand-500:137 94 224; --brand-600:109 67 192; --text-100:245 242 255; --text-200:229 221 251; --text-300:199 188 226; --text-400:168 157 199; --text-500:146 137 176; --border:#39304d; --surface:#211c3c; --shell:#15132b; --soft:#2d2547; --rail:#130c25; --accent-soft:#2e1f52; --shadow:0 8px 30px #0603163d; --chat:#1a1935; color-scheme:dark; }
+[data-theme='forest'] { --ink-900:235 246 238; --ink-800:255 255 255; --ink-700:218 238 222; --ink-600:249 255 250; --ink-500:202 228 208; --brand-400:28 130 93; --brand-500:18 113 82; --brand-600:15 89 66; --text-100:21 54 42; --text-200:36 71 55; --text-300:71 100 81; --text-400:100 133 110; --text-500:126 151 134; --border:#d9e9db; --surface:#fff; --shell:#e5f1e8; --soft:#edf7ef; --rail:#183c2d; --accent-soft:#daf1e0; --shadow:0 8px 22px #0c43280d; --chat:#f1f9f1; }
+[data-theme='sunset'] { --ink-900:252 239 231; --ink-800:255 255 255; --ink-700:251 222 209; --ink-600:255 253 248; --ink-500:245 214 193; --brand-400:224 109 63; --brand-500:204 86 46; --brand-600:166 66 33; --text-100:79 45 39; --text-200:105 59 48; --text-300:136 81 68; --text-400:159 109 96; --text-500:178 140 124; --border:#f3ded2; --surface:#fff; --shell:#fbece3; --soft:#fff3eb; --rail:#4e2934; --accent-soft:#ffe3cd; --shadow:0 8px 22px #9e462010; --chat:#fff6eb; }
+[data-theme='slate'] { --ink-900:27 31 40; --ink-800:38 43 55; --ink-700:52 58 72; --ink-600:45 51 64; --ink-500:73 81 96; --brand-400:151 166 201; --brand-500:118 135 177; --brand-600:93 110 151; --text-100:244 247 252; --text-200:225 231 244; --text-300:190 201 218; --text-400:149 163 188; --text-500:132 147 172; --border:#424854; --surface:#292e3b; --shell:#20242e; --soft:#303746; --rail:#191d27; --accent-soft:#354153; --shadow:0 8px 22px #080a1340; --chat:#222733; color-scheme:dark; }
+@media (display-mode: standalone) { body { user-select: none; } textarea,input,[contenteditable],.message-bubble p { user-select:text; } .app-shell { padding-bottom:max(0px,env(safe-area-inset-bottom)); } }
+@media (max-width: 767px) { .message-bubble { max-width:87%; } .media-mosaic{ width:min(310px,78vw); } .pulse-format-toolbar span {display:none;} }

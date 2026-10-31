@@ -18,6 +18,8 @@ import Avatar from './Avatar';
 import WorkCards from './WorkCards';
 import { shortPreview } from '../lib/format';
 import { roomId } from '../lib/socket';
+import { wallpaperKey, putWallpaper, deleteWallpaper } from '../lib/wallpapers';
+import { SHORTCUTS, keyCombination } from '../lib/shortcuts';
 
 export const workDialogTypes = [
   'poll',
@@ -57,10 +59,16 @@ export default function WorkDialog({
   setCustomTheme,
   onFeature,
   onScheduled,
+  shortcuts,
+  setShortcuts,
+  wallpaperAccount,
+  wallpaperChat,
 }) {
   const [mode, setMode] = useState(dialog.type),
     [tab, setTab] = useState('tasks'),
     [query, setQuery] = useState('');
+  const [customShortcutError, setCustomShortcutError] = useState('');
+  const [wallpaperMessage, setWallpaperMessage] = useState('');
   const [target, setTarget] = useState(dialog.user?.phone || me.phone);
   const [title, setTitle] = useState(dialog.message?.text || dialog.initialText || ''),
     [description, setDescription] = useState('');
@@ -737,6 +745,10 @@ export default function WorkDialog({
             ['sage', 'Botanical', 'Fresh sage, forest and cream'],
             ['ocean', 'Ocean', 'Crisp ice blue and ocean teal'],
             ['blush', 'Rose', 'Soft pink and deep berry'],
+            ['aurora', 'Aurora', 'Midnight purple with cool highlights'],
+            ['forest', 'Forest', 'Deep green and paper tones'],
+            ['sunset', 'Sunset', 'Warm coral and honey'],
+            ['slate', 'Slate', 'Neutral grey and graphite'],
             ['custom', 'Custom studio', 'Your own accent and chat background'],
           ].map(([key, name, description]) => (
             <button
@@ -764,28 +776,44 @@ export default function WorkDialog({
               </label>
             </div>
           )}
+          <section className="rounded-xl border border-white/10 p-3 space-y-3">
+            <strong className="text-sm">Conversation wallpaper</strong>
+            <p className="text-xs text-slate-400">Choose a photo from your device. Stored privately on this device, for the selected conversation. No upload to server.</p>
+            <input type="file" className="field text-xs" accept="image/png,image/jpeg,image/webp" onChange={async (e) => {
+              const file=e.target.files?.[0]; if (!file) return;
+              try { await putWallpaper(wallpaperKey(wallpaperAccount, wallpaperChat), file); setWallpaperMessage('Wallpaper saved on this device.'); }
+              catch (error) { setWallpaperMessage(error.message); }
+              e.target.value='';
+            }} />
+            <button type="button" className="btn-secondary" onClick={async () => { await deleteWallpaper(wallpaperKey(wallpaperAccount, wallpaperChat)); setWallpaperMessage('Wallpaper removed'); }}>Remove wallpaper</button>
+            {wallpaperMessage && <p role="status" className="text-xs">{wallpaperMessage}</p>}
+          </section>
         </>
       )}
       {mode === 'shortcuts' && (
-        <div className="space-y-2 text-sm">
-          {[
-            ['Ctrl / ⌘ + K', 'Search and quick commands'],
-            ['Ctrl / ⌘ + M', 'Focus message composer'],
-            ['/', 'Focus chat list search'],
-            ['Ctrl / ⌘ + 1…9', 'Jump to conversation'],
-            ['Ctrl / ⌘ + Shift + F', 'Search within open chat'],
-            ['Enter / Shift + Enter', 'Send / line break'],
-            ['Ctrl / ⌘ + /', 'Show this shortcut guide'],
-            ['Ctrl / ⌘ + Shift + N', 'Create a group'],
-            ['Ctrl / ⌘ + Shift + L', 'Lock the app'],
-            ['Alt + ↑ / ↓', 'Switch conversations'],
-            ['Escape', 'Close a dialog'],
-            ['Right-click / hold', 'Message actions'],
-          ].map(([keys, value]) => (
-            <div key={keys} className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-white/5 border border-white/10">
-              <span>{value}</span><kbd className="text-xs whitespace-nowrap text-brand-400">{keys}</kbd>
-            </div>
+        <div className="space-y-3 text-sm">
+          <p className="text-xs text-slate-400">Click a shortcut and press a new key combination. Changes apply on this device immediately.</p>
+          {SHORTCUTS.map(([id, label]) => (
+            <label key={id} className="flex items-center gap-3 px-3 py-2 rounded-xl bg-white/5 border border-white/10">
+              <span className="flex-1">{label}</span>
+              <input readOnly value={shortcuts?.[id] || ''} aria-label={`Set shortcut for ${label}`}
+                className="w-32 rounded-md border border-white/10 bg-transparent text-brand-400 text-center text-xs p-2 focus:outline-brand-500"
+                onKeyDown={e => {
+                  e.preventDefault(); e.stopPropagation();
+                  if (e.key === 'Escape') { e.currentTarget.blur(); return; }
+                  const next = keyCombination(e);
+                  if (!next || (!e.ctrlKey && !e.metaKey && !e.altKey)) { setCustomShortcutError('Use Ctrl, Alt or Cmd with another key.'); return; }
+                  if (Object.entries(shortcuts).some(([other, value]) => other !== id && value.toLowerCase() === next.toLowerCase())) {
+                    setCustomShortcutError(`${next} is already in use. Choose another combination.`); return;
+                  }
+                  setShortcuts(previous => ({ ...previous, [id]: next }));
+                  setCustomShortcutError(''); e.currentTarget.blur();
+                }} />
+            </label>
           ))}
+          {customShortcutError && <p role="alert" className="text-xs text-red-400">{customShortcutError}</p>}
+          <button type="button" className="btn-secondary" onClick={() => setShortcuts(Object.fromEntries(SHORTCUTS.map(([key,,shortcut])=>[key,shortcut])))}>Reset all shortcuts</button>
+          <p className="text-xs text-slate-400">Also: Enter to send, Shift+Enter for a new line, Alt+↑/↓ switches chats, Ctrl+1–9 opens chats and right-click opens message actions.</p>
         </div>
       )}
       {mode === 'command' && (

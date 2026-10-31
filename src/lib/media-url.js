@@ -14,6 +14,7 @@ export const API_URL =
 export function resolveMediaUrl(value, api = API_URL, pageProtocol = window.location.protocol) {
   if (!value) return '';
   try {
+    if (typeof value === 'string' && /^\/api\/files\/[0-9a-f-]{36}$/i.test(value)) return `${api}${value}`;
     const url = new URL(value, `${api}/`);
     const file = url.pathname.match(/\/api\/files\/([a-f0-9-]{36})\/?$/i);
     if (file) {

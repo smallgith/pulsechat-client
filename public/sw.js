@@ -205,6 +205,7 @@ self.addEventListener('push', (event) => {
             ? data.icon
             : '/icon-192.png',
         badge: '/icon-192.png',
+        ...(!privateMode && typeof data.image === 'string' && /^https:\/\//.test(data.image) ? { image: data.image } : {}),
         tag: data.tag || 'pulsechat',
         renotify: true,
         silent: false,

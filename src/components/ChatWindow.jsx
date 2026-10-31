@@ -17,6 +17,9 @@ import MessageInput from './MessageInput';
 import ChatHeader from './ChatHeader';
 import ConfirmDialog from './ConfirmDialog';
 import { groupByDay } from '../lib/format';
+import { groupMedia } from '../lib/media-clusters';
+import MediaGallery from './MediaGallery';
+import { wallpaperKey, getWallpaper } from '../lib/wallpapers';
 
 function TypingIndicator({ name }) {
   return (
@@ -108,6 +111,34 @@ export default function ChatWindow({
   scheduledDraft,
 }) {
   const bottomRef = useRef(null);
+  const [galleryId, setGalleryId] = useState(null);
+  const [wallpaper, setWallpaper] = useState('');
+  useEffect(() => {
+    const key = wallpaperKey(me, user?.phone);
+    let cancelled = false;
+    let url = '';
+    const load = async () => {
+      try {
+        const file = await getWallpaper(key);
+        if (cancelled) return;
+        url = file ? URL.createObjectURL(file) : '';
+        setWallpaper(url);
+      } catch { if (!cancelled) setWallpaper(''); }
+    };
+    load();
+    const changed = e => { if (e.detail === key) { if (url) URL.revokeObjectURL(url); url = ''; load(); } };
+    window.addEventListener('pulsechat:wallpaper', changed);
+    return () => { cancelled = true; if (url) URL.revokeObjectURL(url); window.removeEventListener('pulsechat:wallpaper', changed); };
+  }, [me, user?.phone]);
+  useEffect(() => {
+    const open = () => {
+      const first = mediaItems.find(m => m.file?.mime?.startsWith('image/') || m.gif) || mediaItems[0];
+      if (first) setGalleryId(first.id);
+    };
+    window.addEventListener('pulsechat:open-gallery', open);
+    return () => window.removeEventListener('pulsechat:open-gallery', open);
+  }, [mediaItems]);
+  const mediaItems = useMemo(() => messages.filter(m => !m.deleted && (m.file?.mime?.startsWith('image/') || m.file?.mime?.startsWith('video/') || m.gif)), [messages]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQ, setSearchQ] = useState('');
   const [searchIdx, setSearchIdx] = useState(0);
@@ -134,6 +165,7 @@ export default function ChatWindow({
   }, [messages.length, typing]);
 
   const groups = useMemo(() => groupByDay(messages), [messages]);
+  const mediaClusters = useMemo(() => Object.fromEntries(groups.map(g => [g.label, groupMedia(g.items)])), [groups]);
 
   const filteredIds = useMemo(() => {
     if (!searchQ.trim()) return [];
@@ -178,6 +210,7 @@ export default function ChatWindow({
   return (
     <section
       className="chat-panel flex-1 flex flex-col min-w-0 chat-bg h-full relative"
+      style={wallpaper ? { backgroundImage: `linear-gradient(transparent, rgba(0,0,0,.06)), url("${wallpaper}")`, backgroundPosition: "center", backgroundSize: "cover", backgroundRepeat: "no-repeat" } : {}}
       onDragEnter={(e) => {
         if (e.dataTransfer.types.includes('Files')) {
           e.preventDefault();
@@ -362,6 +395,8 @@ export default function ChatWindow({
                 </span>
               </div>
               {g.items.map((m) => {
+                const clustered = mediaClusters[g.label];
+                if (clustered.hidden.has(m.id)) return null;
                 const isHighlighted = filteredIds[searchIdx] === m.id;
                 return (
                   <div
@@ -388,6 +423,8 @@ export default function ChatWindow({
                     )}
                     <MessageBubble
                       message={m}
+                      cluster={clustered.starts.get(m.id)}
+                      onOpenMedia={setGalleryId}
                       people={people}
                       me={me}
                       onCardAction={onCardAction}
@@ -450,6 +487,7 @@ export default function ChatWindow({
         onCancelReply={() => setReplyTo(null)}
       />
 
+      {galleryId && <MediaGallery items={mediaItems} initialId={galleryId} onClose={() => setGalleryId(null)} />}
       <ConfirmDialog
         open={!!confirm}
         title={

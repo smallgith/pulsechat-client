@@ -24,6 +24,8 @@ import DeviceLinkApproval from './components/DeviceLinkApproval';
 import { useAppLock } from './hooks/useAppLock';
 import { useGroupCalls } from './hooks/useGroupCalls';
 import GroupCallPanel from './components/GroupCallPanel';
+import { resolveMediaUrl } from './lib/media-url';
+import { SHORTCUTS, loadShortcuts, actionForKey } from './lib/shortcuts';
 
 const USER_KEY = 'pulsechat.user';
 const defaultPrefs = {
@@ -50,6 +52,7 @@ export default function Messenger() {
       return null;
     }
   });
+  const lastIdentity = useRef(me?.phone || null);
   const [authError, setAuthError] = useState('');
   const [connected, setConnected] = useState(false);
   const [users, setUsers] = useState([]),
@@ -62,6 +65,8 @@ export default function Messenger() {
   const [scheduled, setScheduled] = useState([]),
     [reports, setReports] = useState([]);
   const [scheduledDraft, setScheduledDraft] = useState(null);
+  const [shortcuts, setShortcuts] = useState(loadShortcuts);
+  useEffect(() => localStorage.setItem('pulsechat.shortcuts', JSON.stringify(shortcuts)), [shortcuts]);
   const [theme, setTheme] = useState(() => localStorage.getItem('pulsechat.theme') || 'daylight');
   const [customTheme, setCustomTheme] = useState(() => {
     try { return { accent: '#7050cc', chat: '#f8f6fc', ...JSON.parse(localStorage.getItem('pulsechat.customTheme') || '{}') }; }
@@ -98,7 +103,7 @@ export default function Messenger() {
     setToast({ from, preview, time: '' });
   }, []);
   useEffect(() => {
-    const value = ['daylight', 'midnight', 'sage', 'ocean', 'blush', 'custom'].includes(theme) ? theme : 'daylight';
+    const value = ['daylight', 'midnight', 'sage', 'ocean', 'blush', 'aurora', 'forest', 'sunset', 'slate', 'custom'].includes(theme) ? theme : 'daylight';
     document.documentElement.dataset.theme = value;
     localStorage.setItem('pulsechat.theme', value);
     localStorage.setItem('pulsechat.customTheme', JSON.stringify(customTheme));
@@ -134,7 +139,23 @@ export default function Messenger() {
       if (!me || lock.locked) return;
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
-      if (mod && (key === 'm' || key === 'j')) { e.preventDefault(); document.querySelector('[data-message-composer]')?.focus(); }
+      const mapped = actionForKey(e, shortcuts);
+      if (mapped && !((e.ctrlKey || e.metaKey) && e.target?.matches?.('[data-message-composer]') && ['b','i'].includes(key))) {
+        if (!e.ctrlKey && !e.metaKey && !e.altKey && e.target?.matches?.('input, textarea, select, [contenteditable]')) return;
+        e.preventDefault();
+        if (mapped === 'focus') document.querySelector('[data-message-composer]')?.focus();
+        if (mapped === 'command') setDialog({ type: 'command' });
+        if (mapped === 'search') document.querySelector('[aria-label="Search chats"]')?.focus();
+        if (mapped === 'searchChat') window.dispatchEvent(new Event('pulsechat:search-chat'));
+        if (mapped === 'newGroup') setDialog({ type: 'group_create' });
+        if (mapped === 'theme') setDialog({ type: 'theme' });
+        if (mapped === 'profile') setDialog({ type: 'profile' });
+        if (mapped === 'gallery') window.dispatchEvent(new Event('pulsechat:open-gallery'));
+        if (mapped === 'guide') setDialog({ type: 'shortcuts' });
+        if (mapped === 'lock' && !callRef.current) lock.lock();
+        return;
+      }
+      if (mod && key === 'j') { e.preventDefault(); document.querySelector('[data-message-composer]')?.focus(); }
       else if (!mod && key === '/' && !/input|textarea|select/i.test(e.target?.tagName || '') && !e.target?.isContentEditable) { e.preventDefault(); document.querySelector('[aria-label="Search chats"]')?.focus(); }
       else if (mod && /^[1-9]$/.test(key) && !e.shiftKey && !e.altKey) {
         const all = [...latest.current.users, ...latest.current.groups].filter(u => u.phone !== latest.current.me?.phone);
@@ -145,12 +166,12 @@ export default function Messenger() {
       else if (mod && e.shiftKey && key === 'p') { e.preventDefault(); if (selectedId) { request('preferences', { key: 'pinned', value: selectedId, enabled: !preferences.pinned.includes(selectedId) }); } }
       else if (mod && e.shiftKey && key === 'a') { e.preventDefault(); if (selectedId) { request('preferences', { key: 'archived', value: selectedId, enabled: !preferences.archived.includes(selectedId) }); } }
       else if (mod && e.shiftKey && key === 'f') { e.preventDefault(); if (selectedId) { request('preferences', { key: 'favorites', value: selectedId, enabled: !preferences.favorites.includes(selectedId) }); } }
-      else if (mod && e.shiftKey && key === 'b') { e.preventDefault(); if (selectedId) { onChatAction?.('block', latest.current.users.find((u) => u.phone === selectedId)); } }
-      else if (mod && e.shiftKey && key === 'd') { e.preventDefault(); if (selectedId) { onChatAction?.('delete', latest.current.users.find((u) => u.phone === selectedId)); } }
-      else if (mod && key === 'k') { e.preventDefault(); setDialog({ type: 'command' }); }
-      else if (mod && key === '/') { e.preventDefault(); setDialog({ type: 'shortcuts' }); }
-      else if (mod && e.shiftKey && key === 'n') { e.preventDefault(); setDialog({ type: 'group_create' }); }
-      else if (mod && e.shiftKey && key === 'l') { e.preventDefault(); if (!callRef.current) lock.lock(); }
+      else if (mod && e.shiftKey && key === 'b') { e.preventDefault(); if (selectedId) { chatAction('block', latest.current.users.find((u) => u.phone === selectedId)).catch(e => notice(e.message)); } }
+      else if (mod && e.shiftKey && key === 'd') { e.preventDefault(); if (selectedId) { chatAction('delete', latest.current.users.find((u) => u.phone === selectedId)).catch(e => notice(e.message)); } }
+
+
+
+
       else if (e.key === 'Escape') setDialog(null);
       else if (e.altKey && ['arrowup', 'arrowdown'].includes(key) && !/input|textarea|select/i.test(e.target?.tagName || '')) {
         e.preventDefault();
@@ -163,7 +184,7 @@ export default function Messenger() {
     };
     document.addEventListener('keydown', shortcut);
     return () => document.removeEventListener('keydown', shortcut);
-  }, [me?.phone, lock.locked, lock.lock]);
+  }, [me?.phone, lock.locked, lock.lock, shortcuts]);
   const request = useCallback((event, payload, wait = true) => {
     const socket = socketRef.current;
     if (!socket?.connected)
@@ -258,7 +279,11 @@ export default function Messenger() {
         );
         setUsers(res.users || []);
         setGroups(res.groups || []);
-        setConversations(res.conversations || {});
+        const incoming = res.conversations || {};
+        const previousCount = Object.values(latest.current.conversations || {}).reduce((sum, items) => sum + items.length, 0);
+        const newCount = Object.values(incoming).reduce((sum, items) => sum + items.length, 0);
+        if (previousCount && !newCount) notice('Server returned no chat history. This session’s messages remain visible; check Render persistent storage before reloading.');
+        else setConversations(incoming);
         setPreferences({ ...defaultPrefs, ...res.preferences });
         setStatuses(res.statuses || []);
         setCalls(res.calls || []);
@@ -342,8 +367,8 @@ export default function Messenger() {
       const canReply = !target?.settings?.adminsOnly || target.admins?.includes(me.phone);
       const preview = `${msg.to.startsWith('group:') ? `${msg.fromName}: ` : ''}${shortPreview(msg)}`;
       const foreground = document.visibilityState === 'visible' && document.hasFocus();
-      if (foreground) playSound();
-      if (!foreground && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      if (foreground && !active) playSound();
+      if ((!foreground || !active) && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
         const notify = async () => {
           const state = latest.current;
           if (state.me?.token !== me.token || state.locked || state.preferences.muted.includes(targetId) || state.preferences.blocked.includes(msg.from) ||
@@ -354,7 +379,8 @@ export default function Messenger() {
           if (existing?.some((notification) => notification.data?.messageId === msg.id)) return;
           const reply = await notificationReplyContext(targetId, msg.id).catch(() => null);
           await showBrowserNotification({
-            title: senderName, body: preview, icon: target?.avatarUrl || '/icon-192.png',
+            title: senderName, body: preview, icon: resolveMediaUrl(target?.avatarUrl) || '/icon-192.png',
+            image: msg.file?.mime?.startsWith('image/') ? resolveMediaUrl(msg.file.url) : undefined,
             tag: `chat-${msg.roomId}`, force: true, chatUrl: `/?chat=${encodeURIComponent(targetId)}`,
             onClick: () => setSelectedId(targetId), messageId: msg.id, user: me.phone, chat: targetId, reply, canReply,
           });
@@ -363,9 +389,7 @@ export default function Messenger() {
         if (isPushEnabled()) setTimeout(() => notify().catch(() => {}), 1800);
         else notify().catch(() => {});
       }
-      if (document.visibilityState === 'visible') {
-        setToast({ from: senderName, avatar: target?.avatarUrl, preview, time: '', canReply, _raw: msg, targetId });
-      }
+      // Incoming messages use OS/browser notifications only; avoid an extra in-app popup.
     });
     socket.on('chat_cleared', ({ roomId: rid }) => setConversations((p) => ({ ...p, [rid]: [] })));
     socket.on('messages_expired', ({ roomId: rid, ids }) =>
@@ -803,6 +827,11 @@ export default function Messenger() {
       <Login
         error={authError}
         onJoin={(u) => {
+          if (lastIdentity.current && lastIdentity.current !== u.phone) {
+            setConversations({}); setSelectedId(null); setGroups([]); setUsers([]);
+            knownIds.current.clear();
+          }
+          lastIdentity.current = u.phone;
           localStorage.setItem(USER_KEY, JSON.stringify(u));
           setMe(u);
           setAuthError('');
@@ -915,7 +944,7 @@ export default function Messenger() {
       <InstallAppPrompt />
       {groupCalling.call && (
         <GroupCallPanel call={groupCalling.call} localStream={groupCalling.localStream}
-          remotes={groupCalling.remotes} onAccept={groupCalling.answer}
+          remotes={groupCalling.remotes} participants={groupCalling.participants} onAccept={groupCalling.answer}
           onLeave={groupCalling.leave} onNotice={notice} users={users} />
       )}
       {call && (
@@ -968,6 +997,10 @@ export default function Messenger() {
           setTheme={setTheme}
           customTheme={customTheme}
           setCustomTheme={setCustomTheme}
+          shortcuts={shortcuts}
+          setShortcuts={setShortcuts}
+          wallpaperAccount={me.phone}
+          wallpaperChat={selectedId}
           onFeature={openFeature}
         />
       )}

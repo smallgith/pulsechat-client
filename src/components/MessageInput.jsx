@@ -50,6 +50,8 @@ const MessageInput = forwardRef(function MessageInput(
   ref
 ) {
   const [text, setText] = useState(() => localStorage.getItem(draftKey) || '');
+  const [formatOpen, setFormatOpen] = useState(false);
+  const [formatColor, setFormatColor] = useState('#f59e0b');
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [picker, setPicker] = useState(null),
@@ -131,6 +133,18 @@ const MessageInput = forwardRef(function MessageInput(
     onTyping(true);
     clearTimeout(typingTimer.current);
     typingTimer.current = setTimeout(() => onTyping(false), 1400);
+  };
+  const formatSelection = (prefix, suffix) => {
+    const element = textarea.current;
+    if (!element) return;
+    const a = element.selectionStart, b = element.selectionEnd;
+    const original = text.slice(a,b) || 'text';
+    const insertion = `${prefix}${original}${suffix}`;
+    changed(`${text.slice(0,a)}${insertion}${text.slice(b)}`);
+    requestAnimationFrame(() => {
+      element.focus({ preventScroll: true });
+      element.setSelectionRange(a + prefix.length, a + prefix.length + original.length);
+    });
   };
   const submit = async () => {
     if (disabled || sending.current || (!text.trim() && !attachments.items.length)) return;
@@ -388,6 +402,16 @@ const MessageInput = forwardRef(function MessageInput(
           onCapture={(file) => addFiles([file])}
         />
       )}
+      {formatOpen && !recorder.recording && (
+        <div className="pulse-format-toolbar" role="toolbar" aria-label="Text formatting">
+          <button type="button" onMouseDown={e=>e.preventDefault()} onClick={() => formatSelection('**','**')} title="Bold (Ctrl+B)"><strong>B</strong></button>
+          <button type="button" onMouseDown={e=>e.preventDefault()} onClick={() => formatSelection('_','_')} title="Italic (Ctrl+I)"><em>I</em></button>
+          <button type="button" onMouseDown={e=>e.preventDefault()} onClick={() => formatSelection('~','~')} title="Strikethrough"><s>S</s></button>
+          <label title="Text colour" className="pulse-format-color">Colour <input type="color" value={formatColor} onChange={e => setFormatColor(e.target.value)} /></label>
+          <button type="button" onMouseDown={e=>e.preventDefault()} onClick={() => formatSelection(`{${formatColor}|`, '}')}>Apply colour</button>
+          <span className="text-[11px] opacity-60">Select text first · Markdown safe formatting</span>
+        </div>
+      )}
       {recorder.recording ? (
         <div className="composer-row">
           <button
@@ -424,6 +448,8 @@ const MessageInput = forwardRef(function MessageInput(
           >
             <Plus size={22} />
           </button>
+          <button type="button" aria-label="Text formatting" title="Text formatting" aria-pressed={formatOpen}
+            onClick={() => setFormatOpen(v => !v)} className={`icon-btn ${formatOpen ? 'text-brand-400' : ''}`}><strong className="text-sm">Aa</strong></button>
           <div className="composer-field">
             <textarea data-message-composer
               aria-label="Message"
@@ -438,6 +464,9 @@ const MessageInput = forwardRef(function MessageInput(
                 if (e.target.value === '/') setPicker('templates');
               }}
               onKeyDown={(e) => {
+                if ((e.ctrlKey || e.metaKey) && ['b','i'].includes(e.key.toLowerCase())) {
+                  e.preventDefault(); formatSelection(e.key.toLowerCase() === 'b' ? '**' : '_', e.key.toLowerCase() === 'b' ? '**' : '_'); return;
+                }
                 if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !e.ctrlKey && !e.metaKey) {
                   e.preventDefault();
                   submit();

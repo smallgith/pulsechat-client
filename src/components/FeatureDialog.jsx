@@ -7,7 +7,7 @@ import { getPermission, requestPermission, showBrowserNotification } from '../li
 import { enablePush } from '../lib/push';
 import GroupTools from './GroupTools';
 import CameraCapture from './CameraCapture';
-import { uploadFile, SOCKET_URL, authHeaders } from '../lib/socket';
+import { SOCKET_URL, authHeaders } from '../lib/socket';
 import GoogleSignInButton from './GoogleSignInButton';
 import { downloadAttachment } from '../lib/download-attachment';
 import { resolveMediaUrl } from '../lib/media-url';
@@ -65,8 +65,15 @@ export default function FeatureDialog({
     if (!file?.type?.startsWith('image/')) throw new Error('Choose a photo');
     if (file.size > 5 * 1024 * 1024) throw new Error('Profile image must be under 5 MB');
     setBusy(true); setError('');
-    try { const uploaded = await uploadFile(file); setAvatarUrl(uploaded.url); }
-    catch (e) { setError(e.message || 'Photo could not be uploaded'); }
+    try {
+      const data = new FormData(); data.append('file', file, file.name || 'profile.jpg');
+      const response = await fetch(`${SOCKET_URL}/api/upload`, { method: 'POST', headers: authHeaders(), body: data });
+      const uploaded = await response.json();
+      if (!response.ok || !uploaded.url) throw new Error(uploaded.error || 'Photo upload failed');
+      // Store a stable app-owned file path, not an old Render host or localhost URL.
+      const u = new URL(uploaded.url, SOCKET_URL);
+      setAvatarUrl(/^\/api\/files\/[0-9a-f-]{36}$/i.test(u.pathname) ? u.pathname : uploaded.url);
+    } catch (e) { setError(e.message || 'Photo could not be uploaded'); }
     finally { setBusy(false); }
   };
   const [members, setMembers] = useState([]);
@@ -159,13 +166,13 @@ export default function FeatureDialog({
       )}
       {dialog.type === 'profile' && (
         <form
-          className="space-y-4"
+          className="space-y-4 profile-editor"
           onSubmit={(e) => submit(e, () => request('profile', { name, about, avatarUrl, avatarColor, avatarStyle, avatarFocus }))}
         >
           <div className="flex justify-center">
-            <Avatar name={name} size={80} src={avatarUrl} color={avatarColor} variant={avatarStyle} focus={avatarFocus} />
+            <Avatar name={name} size={104} src={avatarUrl} color={avatarColor} variant={avatarStyle} focus={avatarFocus} />
           </div>
-          <p className="text-center text-slate-400 text-sm">{me.phone.startsWith('google:') ? 'Google account' : me.phone}</p>
+          <p className="text-center text-slate-400 text-xs">Your photo, your look · {me.email || (me.phone.startsWith('google:') ? 'Google account' : me.phone)}</p>
           {googleClientId && !me.phone.startsWith('google:') && <div className="border border-white/10 rounded-xl p-3 space-y-2">
             <p className="text-xs text-slate-400 text-center">Link Google to keep using this existing account and its chats.</p>
             {googleLinkDone ? <p className="text-xs text-brand-400 text-center">Google account linked. You can now sign in for free.</p> :
@@ -196,7 +203,7 @@ export default function FeatureDialog({
               ))}
             </div>
           </div>
-          <section className="rounded-2xl border border-white/10 p-3 space-y-3" aria-label="AI avatar studio">
+          <details className="rounded-2xl border border-white/10 p-3 space-y-3" aria-label="AI avatar studio"><summary className="text-sm font-medium cursor-pointer">Optional AI Avatar Studio (requires a paid API)</summary><div className="space-y-3 pt-3">
             <div><p className="font-semibold text-sm">AI Avatar Studio</p><p className="text-xs text-slate-400">Generate your own character or optionally transform a selfie. A selfie is sent to an external image provider only when you press Generate.</p></div>
             <label className="field-label">Avatar look
               <select className="field" value={aiStyle} onChange={(e) => setAiStyle(e.target.value)}>
@@ -219,7 +226,7 @@ export default function FeatureDialog({
             </label>
             <button type="button" className="btn-secondary w-full" disabled={aiBusy || busy} onClick={generateAiAvatar}>{aiBusy ? 'Creating AI avatar…' : 'Generate AI avatar'}</button>
             <p className="text-[11px] text-slate-400">Preview appears above. Press Save profile to apply it. Requires configured image API access and may incur provider costs.</p>
-          </section>
+          </div></details>
           <label className="field-label">Your profile colour
             <input type="color" value={avatarColor} className="h-11 w-full cursor-pointer rounded-lg"
               onChange={(e) => setAvatarColor(e.target.value)} />
