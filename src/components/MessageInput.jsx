@@ -448,8 +448,8 @@ const MessageInput = forwardRef(function MessageInput(
           >
             <Plus size={22} />
           </button>
-          <button type="button" aria-label="Text formatting" title="Text formatting" aria-pressed={formatOpen}
-            onClick={() => setFormatOpen(v => !v)} className={`icon-btn ${formatOpen ? 'text-brand-400' : ''}`}><strong className="text-sm">Aa</strong></button>
+          {/* <button type="button" aria-label="Text formatting" title="Text formatting" aria-pressed={formatOpen}
+            onClick={() => setFormatOpen(v => !v)} className={`icon-btn ${formatOpen ? 'text-brand-400' : ''}`}><strong className="text-sm">Aa</strong></button> */}
           <div className="composer-field">
             <textarea data-message-composer
               aria-label="Message"
